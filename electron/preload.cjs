@@ -53,4 +53,8 @@ contextBridge.exposeInMainWorld('oasis', {
     ipcRenderer.on('launcher:update', handler)
     return () => ipcRenderer.removeListener('launcher:update', handler)
   },
+
+  // ─── 다른 윈도우 열기 ───
+  openLauncher: () => ipcRenderer.invoke('ui:open-launcher'),
+  openClipboard: () => ipcRenderer.invoke('ui:open-clipboard'),
 })

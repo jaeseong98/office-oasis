@@ -529,6 +529,11 @@ ipcMain.handle('clipboard:set-paused', (_e, paused) => {
   return { paused: clipboardPaused }
 })
 
+/* ───────── 렌더러 → 윈도우 열기 IPC ───────── */
+
+ipcMain.handle('ui:open-launcher', () => { showLauncher(); return { ok: true } })
+ipcMain.handle('ui:open-clipboard', () => { showClipboardNearCursor(); return { ok: true } })
+
 /* ───────── 런처 (Oasis Launcher) ───────── */
 
 let launcherTiles = []
@@ -557,7 +562,18 @@ function broadcastLauncher() {
 
 async function extractFileIcon(filePath) {
   try {
-    const img = await app.getFileIcon(filePath, { size: 'large' })
+    // .lnk 는 자기 자신의 아이콘이 "파일+화살표" 일반 아이콘이므로
+    // 가리키는 실제 .exe 를 풀어서 거기서 아이콘을 가져온다.
+    let resolved = filePath
+    if (process.platform === 'win32' && filePath.toLowerCase().endsWith('.lnk')) {
+      try {
+        const info = shell.readShortcutLink(filePath)
+        // info.icon 이 별도 지정돼 있으면 그게 우선
+        if (info?.icon) resolved = info.icon
+        else if (info?.target) resolved = info.target
+      } catch { /* lnk 파싱 실패 시 원본 경로로 폴백 */ }
+    }
+    const img = await app.getFileIcon(resolved, { size: 'large' })
     if (img && !img.isEmpty()) return img.toDataURL()
   } catch (err) {
     console.warn('[oasis] getFileIcon failed:', err.message)

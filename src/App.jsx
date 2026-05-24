@@ -262,7 +262,9 @@ export default function App() {
         scanResult={scanResult}
         totalRecoverable={totalRecoverable}
         scanning={scanning}
-        onRescan={startScan}
+        onBackToSetup={() => { setScanResult(null); setSelected(new Set()); setActiveCat(null); }}
+        onOpenLauncher={() => window.oasis?.openLauncher()}
+        onOpenClipboard={() => window.oasis?.openClipboard()}
       />
 
       <main className="flex-1 overflow-hidden">
@@ -404,33 +406,48 @@ function ConfirmDeleteModal({ state, onChange, onCancel, onConfirm, totalSize, t
 
 /* ───────── 헤더 ───────── */
 
-function Header({ scanResult, totalRecoverable, scanning, onRescan }) {
+function Header({ scanResult, totalRecoverable, scanning, onBackToSetup, onOpenLauncher, onOpenClipboard }) {
   return (
     <header className="px-8 py-5 border-b border-stone-200 bg-white shrink-0">
-      <div className="flex items-end justify-between max-w-6xl mx-auto">
+      <div className="flex items-end justify-between max-w-6xl mx-auto gap-6">
         <div>
           <p className="eyebrow">Office Oasis</p>
           <h1 className="text-xl font-semibold tracking-tight mt-1">바탕화면 대청소</h1>
         </div>
-        {scanResult && (
-          <div className="flex items-center gap-8 text-sm">
-            <div className="text-right">
-              <p className="eyebrow">스캔됨</p>
-              <p className="font-semibold tnum mt-0.5">
-                {scanResult.totals.fileCount.toLocaleString()}
-                <span className="text-stone-500 font-normal ml-1">파일</span>
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="eyebrow">정리 가능</p>
-              <p className="font-semibold tnum mt-0.5">{formatBytes(totalRecoverable)}</p>
-            </div>
-            <button onClick={onRescan} disabled={scanning}
-              className="text-sm text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline disabled:opacity-40">
-              다시 스캔
+        <div className="flex items-end gap-6 text-sm">
+          {scanResult && (
+            <>
+              <div className="text-right">
+                <p className="eyebrow">스캔됨</p>
+                <p className="font-semibold tnum mt-0.5">
+                  {scanResult.totals.fileCount.toLocaleString()}
+                  <span className="text-stone-500 font-normal ml-1">파일</span>
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="eyebrow">정리 가능</p>
+                <p className="font-semibold tnum mt-0.5">{formatBytes(totalRecoverable)}</p>
+              </div>
+              <button onClick={onBackToSetup} disabled={scanning}
+                className="self-end pb-0.5 text-sm text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline disabled:opacity-40"
+                title="폴더 설정으로 돌아가기">
+                다시 스캔
+              </button>
+            </>
+          )}
+          <div className="self-end pb-0.5 border-l border-stone-200 pl-5 flex items-center gap-4">
+            <button onClick={onOpenClipboard}
+              className="text-sm text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline"
+              title="Ctrl+Shift+V">
+              클립보드
+            </button>
+            <button onClick={onOpenLauncher}
+              className="text-sm text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline"
+              title="Ctrl+Shift+L">
+              런처
             </button>
           </div>
-        )}
+        </div>
       </div>
     </header>
   )
