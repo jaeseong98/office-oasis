@@ -423,6 +423,7 @@ function createClipboardWindow() {
     alwaysOnTop: true,
     show: false,
     backgroundColor: '#fafaf9',
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -603,6 +604,7 @@ function createWindow() {
     backgroundColor: '#fafaf9',
     title: '바탕화면 대청소 · Office Oasis',
     autoHideMenuBar: true,
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
