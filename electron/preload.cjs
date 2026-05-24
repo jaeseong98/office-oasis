@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('oasis', {
     return () => ipcRenderer.removeListener('scan:progress', handler)
   },
 
-  // ─── 클립보드 매니저 ───
+  // ─── 클립보드 ───
   clipboardList: () => ipcRenderer.invoke('clipboard:list'),
   clipboardPaste: (id) => ipcRenderer.invoke('clipboard:paste', id),
   clipboardDelete: (id) => ipcRenderer.invoke('clipboard:delete', id),
@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('oasis', {
   launcherPickFile: () => ipcRenderer.invoke('launcher:pick-file'),
   launcherPickFolder: () => ipcRenderer.invoke('launcher:pick-folder'),
   launcherDroppedPaths: (paths) => ipcRenderer.invoke('launcher:dropped-paths', paths),
+  launcherListApps: () => ipcRenderer.invoke('launcher:list-apps'),
   launcherHide: () => ipcRenderer.invoke('launcher:hide'),
   launcherToggleFullscreen: () => ipcRenderer.invoke('launcher:toggle-fullscreen'),
   launcherIsFullscreen: () => ipcRenderer.invoke('launcher:is-fullscreen'),
@@ -57,7 +58,26 @@ contextBridge.exposeInMainWorld('oasis', {
     return () => ipcRenderer.removeListener('launcher:update', handler)
   },
 
+  // ─── 노트 ───
+  notesList: () => ipcRenderer.invoke('notes:list'),
+  notesCreate: () => ipcRenderer.invoke('notes:create'),
+  notesSave: (id, body) => ipcRenderer.invoke('notes:save', { id, body }),
+  notesDelete: (id) => ipcRenderer.invoke('notes:delete', id),
+  onNotesUpdate: (cb) => {
+    const handler = (_e, list) => cb(list)
+    ipcRenderer.on('notes:update', handler)
+    return () => ipcRenderer.removeListener('notes:update', handler)
+  },
+
   // ─── 다른 윈도우 열기 ───
   openLauncher: () => ipcRenderer.invoke('ui:open-launcher'),
   openClipboard: () => ipcRenderer.invoke('ui:open-clipboard'),
+  openNotes: () => ipcRenderer.invoke('ui:open-notes'),
+
+  // ─── 윈도우 컨트롤 (frameless 창용) ───
+  winMinimize: () => ipcRenderer.invoke('win:minimize'),
+  winMaximizeToggle: () => ipcRenderer.invoke('win:maximize-toggle'),
+  winHide: () => ipcRenderer.invoke('win:hide'),
+  winIsMaximized: () => ipcRenderer.invoke('win:is-maximized'),
+  winToggleFullscreen: () => ipcRenderer.invoke('win:toggle-fullscreen'),
 })

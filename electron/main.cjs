@@ -22,6 +22,7 @@ const { autoUpdater } = require('electron-updater')
 let mainWindow = null
 let clipboardWindow = null
 let launcherWindow = null
+let notesWindow = null
 let tray = null
 let scanState = { running: false, cancelToken: 0 }
 
@@ -437,9 +438,11 @@ function startClipboardPolling() {
 function createClipboardWindow() {
   clipboardWindow = new BrowserWindow({
     width: 480,
-    height: 540,
+    height: 560,
+    minWidth: 360,
+    minHeight: 320,
     frame: false,
-    resizable: false,
+    resizable: true,
     skipTaskbar: true,
     alwaysOnTop: true,
     show: false,
@@ -555,6 +558,171 @@ ipcMain.handle('clipboard:set-paused', (_e, paused) => {
 
 ipcMain.handle('ui:open-launcher', () => { showLauncher(); return { ok: true } })
 ipcMain.handle('ui:open-clipboard', () => { showClipboardNearCursor(); return { ok: true } })
+ipcMain.handle('ui:open-notes', () => { showNotes(); return { ok: true } })
+
+/* ───────── 윈도우 컨트롤 (custom titlebar용) ───────── */
+
+function ownerWindow(event) {
+  return BrowserWindow.fromWebContents(event.sender)
+}
+
+ipcMain.handle('win:minimize', (e) => { ownerWindow(e)?.minimize() })
+ipcMain.handle('win:maximize-toggle', (e) => {
+  const w = ownerWindow(e); if (!w) return
+  if (w.isMaximized()) w.unmaximize(); else w.maximize()
+})
+ipcMain.handle('win:hide', (e) => { ownerWindow(e)?.hide() })
+ipcMain.handle('win:is-maximized', (e) => ownerWindow(e)?.isMaximized() ?? false)
+ipcMain.handle('win:toggle-fullscreen', (e) => {
+  const w = ownerWindow(e); if (!w) return
+  w.setFullScreen(!w.isFullScreen())
+})
+
+/* ───────── 노트 (Quick Notes) ───────── */
+
+let notes = []
+
+function notesFilePath() {
+  return path.join(app.getPath('userData'), 'notes.json')
+}
+function loadNotes() {
+  try {
+    const raw = fs.readFileSync(notesFilePath(), 'utf8')
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) notes = parsed
+  } catch { notes = [] }
+}
+function saveNotes() {
+  try { fs.writeFileSync(notesFilePath(), JSON.stringify(notes)) } catch { /* ignore */ }
+}
+function broadcastNotes() {
+  if (notesWindow && !notesWindow.isDestroyed()) {
+    notesWindow.webContents.send('notes:update', notes)
+  }
+}
+
+function createNotesWindow() {
+  notesWindow = new BrowserWindow({
+    width: 760,
+    height: 560,
+    minWidth: 480,
+    minHeight: 360,
+    frame: false,
+    backgroundColor: '#fafaf9',
+    title: 'Office Oasis · 노트',
+    icon: path.join(__dirname, 'assets', 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+  notesWindow.loadURL(rendererURL('notes'))
+  attachDevToolsShortcut(notesWindow)
+  notesWindow.webContents.once('did-finish-load', () => {
+    if (notesWindow && !notesWindow.isDestroyed()) {
+      notesWindow.webContents.send('notes:update', notes)
+    }
+  })
+  notesWindow.on('close', (e) => {
+    if (!app.isQuitting && tray && !tray.isDestroyed()) {
+      e.preventDefault()
+      notesWindow.hide()
+    }
+  })
+  notesWindow.on('closed', () => { notesWindow = null })
+}
+
+function showNotes() {
+  if (!notesWindow || notesWindow.isDestroyed()) createNotesWindow()
+  notesWindow.show()
+  notesWindow.focus()
+}
+
+ipcMain.handle('notes:list', () => notes)
+
+ipcMain.handle('notes:create', () => {
+  const note = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    body: '',
+    updatedAt: Date.now(),
+    createdAt: Date.now(),
+  }
+  notes.unshift(note)
+  saveNotes()
+  broadcastNotes()
+  return note
+})
+
+ipcMain.handle('notes:save', (_e, payload) => {
+  const { id, body } = payload || {}
+  const n = notes.find(x => x.id === id)
+  if (!n) return { ok: false }
+  n.body = body
+  n.updatedAt = Date.now()
+  // 최근 수정을 최상단으로 — 단 자판 칠 때마다 흔들리지 않게 활성 노트가 이미 상단이면 유지
+  if (notes[0]?.id !== id) {
+    notes = [n, ...notes.filter(x => x.id !== id)]
+  }
+  saveNotes()
+  return { ok: true }
+})
+
+ipcMain.handle('notes:delete', (_e, id) => {
+  notes = notes.filter(n => n.id !== id)
+  saveNotes()
+  broadcastNotes()
+  return { ok: true }
+})
+
+/* ───────── 설치된 앱 검색 (Windows 시작메뉴) ───────── */
+
+let installedAppsCache = null
+let installedAppsCacheAt = 0
+
+function startMenuRoots() {
+  if (process.platform !== 'win32') return []
+  return [
+    path.join(process.env.APPDATA || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+    path.join(process.env.ProgramData || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+  ].filter(Boolean)
+}
+
+async function walkLnks(dir, out, depth = 0) {
+  if (depth > 3) return
+  let entries
+  try { entries = await fsp.readdir(dir, { withFileTypes: true }) } catch { return }
+  for (const e of entries) {
+    const full = path.join(dir, e.name)
+    if (e.isDirectory()) {
+      await walkLnks(full, out, depth + 1)
+    } else if (e.isFile() && e.name.toLowerCase().endsWith('.lnk')) {
+      const lower = e.name.toLowerCase()
+      // 설치 제거·복구 같은 보조 바로가기는 제외
+      if (lower.includes('uninstall') || lower.includes('제거') || lower.includes('도움말') || lower.includes('help')) continue
+      out.push({ name: path.basename(e.name, '.lnk'), path: full })
+    }
+  }
+}
+
+async function listInstalledApps() {
+  // 60초 캐시
+  if (installedAppsCache && Date.now() - installedAppsCacheAt < 60000) return installedAppsCache
+  const out = []
+  for (const dir of startMenuRoots()) {
+    await walkLnks(dir, out)
+  }
+  // 중복 이름 제거 (전역 > 사용자별)
+  const byName = new Map()
+  for (const a of out) byName.set(a.name, a)
+  const result = Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  installedAppsCache = result
+  installedAppsCacheAt = Date.now()
+  return result
+}
+
+ipcMain.handle('launcher:list-apps', () => listInstalledApps())
 
 /* ───────── 런처 (Oasis Launcher) ───────── */
 
@@ -631,10 +799,12 @@ function createLauncherWindow() {
     minWidth: 900,
     minHeight: 600,
     frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
+    backgroundColor: '#fafaf9',
     title: 'Office Oasis · 런처',
     autoHideMenuBar: true,
+    resizable: true,
+    minimizable: true,
+    maximizable: true,
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -658,8 +828,10 @@ function createLauncherWindow() {
 
 function showLauncher() {
   if (!launcherWindow || launcherWindow.isDestroyed()) createLauncherWindow()
-  // PC방 런처 느낌 — 항상 풀스크린으로 띄움
-  if (!launcherWindow.isFullScreen()) launcherWindow.setFullScreen(true)
+  // PC방 런처 느낌 — 최대화로 띄움 (창 컨트롤은 유지)
+  if (!launcherWindow.isFullScreen() && !launcherWindow.isMaximized()) {
+    launcherWindow.maximize()
+  }
   launcherWindow.show()
   launcherWindow.focus()
 }
@@ -837,6 +1009,10 @@ function buildTrayMenu() {
       label: '런처 열기 (Ctrl+Shift+L)',
       click: () => showLauncher(),
     },
+    {
+      label: '노트 (Ctrl+Shift+N)',
+      click: () => showNotes(),
+    },
     { type: 'separator' },
     {
       label: clipboardPaused ? '클립보드 기록 재개' : '클립보드 기록 일시 정지',
@@ -972,6 +1148,7 @@ function setupAutoUpdater() {
 app.whenReady().then(() => {
   loadClipboardHistory()
   loadLauncherTiles()
+  loadNotes()
   startClipboardPolling()
   createTray()
   createWindow()
@@ -982,6 +1159,8 @@ app.whenReady().then(() => {
   if (!ok1) console.error('[oasis] failed to register Ctrl+Shift+V')
   const ok2 = globalShortcut.register('CommandOrControl+Shift+L', () => showLauncher())
   if (!ok2) console.error('[oasis] failed to register Ctrl+Shift+L')
+  const ok3 = globalShortcut.register('CommandOrControl+Shift+N', () => showNotes())
+  if (!ok3) console.error('[oasis] failed to register Ctrl+Shift+N')
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

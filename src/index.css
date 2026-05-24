@@ -21,6 +21,17 @@ html, body, #root {
 
 .tnum { font-variant-numeric: tabular-nums; }
 
+/* frameless 창에서 드래그 가능한 영역 */
+.drag-region {
+  -webkit-app-region: drag;
+  app-region: drag;
+  user-select: none;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 .eyebrow {
   font-size: 11px;
   letter-spacing: 0.08em;

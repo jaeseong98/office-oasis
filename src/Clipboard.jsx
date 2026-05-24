@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, Pin, X, Trash2 } from 'lucide-react'
+import { Search, Pin, X, Trash2, Clipboard as ClipIcon } from 'lucide-react'
+import { WindowControls } from './TitleBar.jsx'
 
 /* ───────── 유틸 ───────── */
 
@@ -86,8 +87,20 @@ export default function ClipboardApp() {
 
   return (
     <div className="h-screen flex flex-col bg-stone-50 text-stone-900 border border-stone-300">
+      {/* 타이틀바: 드래그 가능 + 윈도우 컨트롤 */}
+      <div className="drag-region flex items-center justify-between h-8 px-2.5 border-b border-stone-200 bg-white">
+        <div className="flex items-center gap-1.5 text-[11px] text-stone-500">
+          <ClipIcon className="w-3 h-3" />
+          <span>클립보드</span>
+        </div>
+        <WindowControls
+          variant="light"
+          onClose={() => window.oasis?.clipboardHide()}
+        />
+      </div>
+
       {/* 검색 바 */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-stone-200 bg-white">
+      <div className="no-drag flex items-center gap-2 px-3 py-2.5 border-b border-stone-200 bg-white">
         <Search className="w-4 h-4 text-stone-400 shrink-0" />
         <input
           ref={inputRef}
