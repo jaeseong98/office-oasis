@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+:root {
+  font-family: system-ui, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", Roboto, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color-scheme: light;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+/* 캔버스 영역 안에서 텍스트 선택을 막아 던지기 인터랙션 방해를 줄임 */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 스크롤바 살짝 다듬기 (엑셀 뷰에서만 보임) */
+.thin-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.thin-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.thin-scroll::-webkit-scrollbar-track { background: transparent; }
