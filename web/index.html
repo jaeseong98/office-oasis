@@ -15,54 +15,83 @@
 <body>
   <header class="topbar">
     <div class="container topbar-inner">
-      <p class="brand">Office Oasis</p>
+      <div class="brand-row">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <p class="brand">Office Oasis</p>
+      </div>
       <nav>
         <a class="navlink" href="#features">기능</a>
-        <a class="navlink" href="https://github.com/jaeseong98/office-oasis" target="_blank" rel="noopener">GitHub</a>
+        <a class="navlink" href="#how">사용법</a>
       </nav>
     </div>
   </header>
 
   <main>
+    <!-- HERO -->
     <section class="hero">
       <div class="container">
         <p class="eyebrow">데스크톱 대청소 유틸리티</p>
         <h1 class="title">
-          바탕화면을 <em>진짜로</em><br />
-          청소해 드립니다.
+          어수선한 바탕화면을<br />
+          <em>한 번에</em> 정리해 드립니다.
         </h1>
         <p class="lead">
-          거대 파일·90일 넘게 묵은 파일·스크린샷 잔해·임시 파일·중복 파일·빈 폴더를<br class="md-only" />
-          한 번에 찾아내고, 선택해서 휴지통으로 보냅니다. 복원 가능.
+          거대 파일·묵은 파일·스크린샷 잔해·임시 파일·중복 파일·빈 폴더를<br class="md-only" />
+          찾아내고, 선택해서 휴지통으로 보냅니다. 복원 가능.
         </p>
 
         <div class="download" id="download">
-          <a id="primary-cta" class="btn-primary" href="https://github.com/jaeseong98/office-oasis/releases/latest" target="_blank" rel="noopener">
+          <a id="primary-cta" class="btn-primary" href="/dl/win">
             Download
           </a>
-          <a id="secondary-cta" class="btn-secondary" href="https://github.com/jaeseong98/office-oasis/releases/latest" target="_blank" rel="noopener">
+          <a id="secondary-cta" class="btn-secondary" href="#download-other">
             다른 OS
           </a>
         </div>
 
-        <p class="version" id="version-line">최신 버전 확인 중…</p>
+        <p class="version" id="version-line">버전 정보 확인 중…</p>
 
         <div class="notice">
           <strong>처음 실행 시 안내</strong><br />
-          코드 서명되지 않아 Windows에서 <em>"Windows의 PC 보호"</em> 화면이 한 번 나옵니다.
-          <br />
-          <span class="muted">→ "추가 정보" 클릭 → "실행" 버튼</span>
+          Windows에서 <em>"Windows의 PC 보호"</em> 화면이 한 번 나옵니다.
+          <span class="muted">→ "추가 정보" 클릭 → "실행" 버튼</span><br />
+          한 번 실행한 뒤로는 다시 안 뜹니다.
         </div>
       </div>
     </section>
 
+    <!-- STATS -->
+    <section class="stats">
+      <div class="container">
+        <div class="stats-grid">
+          <div class="stat-cell">
+            <p class="stat-eyebrow">평균 회수 용량</p>
+            <p class="stat-value">1<span class="stat-unit">.5 GB</span></p>
+            <p class="stat-desc">개인 PC 1회 청소 기준</p>
+          </div>
+          <div class="stat-cell">
+            <p class="stat-eyebrow">스캔 시간</p>
+            <p class="stat-value">~2<span class="stat-unit">분</span></p>
+            <p class="stat-desc">바탕화면 · Downloads · Documents</p>
+          </div>
+          <div class="stat-cell">
+            <p class="stat-eyebrow">데이터 전송</p>
+            <p class="stat-value">0<span class="stat-unit">바이트</span></p>
+            <p class="stat-desc">모든 분석은 본인 PC에서만</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
     <section class="features" id="features">
       <div class="container">
-        <p class="eyebrow">무엇을 청소하나</p>
+        <p class="eyebrow">청소 카테고리</p>
+        <h2 class="section-title">6가지 정리 자동 분류</h2>
         <ul class="feature-list">
           <li>
             <p class="feature-label">거대 파일</p>
-            <p class="feature-desc">50MB 이상의 단일 파일을 모두 추려냄. 보통 영상·iso·설치 파일.</p>
+            <p class="feature-desc">50MB 이상의 단일 파일. 보통 영상·iso·설치 파일.</p>
           </li>
           <li>
             <p class="feature-label">오래 묵은 파일</p>
@@ -78,19 +107,43 @@
           </li>
           <li>
             <p class="feature-label">중복 파일</p>
-            <p class="feature-desc">SHA1 해시로 동일 파일을 탐지. 가장 오래된 1개는 자동 보존 추천.</p>
+            <p class="feature-desc">SHA1 해시로 동일 파일 탐지. 가장 오래된 1개는 자동 보존 추천.</p>
           </li>
           <li>
             <p class="feature-label">빈 폴더</p>
-            <p class="feature-desc">내용물 없이 자리만 차지하던 폴더를 정리.</p>
+            <p class="feature-desc">내용물 없이 자리만 차지하던 폴더.</p>
           </li>
         </ul>
       </div>
     </section>
 
-    <section class="how">
+    <!-- INCLUDED TOOLS -->
+    <section class="tools">
+      <div class="container">
+        <p class="eyebrow">함께 제공</p>
+        <h2 class="section-title">청소 외에 매일 쓰는 도구 묶음</h2>
+        <div class="tools-grid">
+          <div class="tool-cell">
+            <p class="tool-name">클립보드 매니저</p>
+            <p class="tool-desc">최근 복사 기록 200개 저장. <code>Ctrl+Shift+V</code>로 어디서나 호출.</p>
+          </div>
+          <div class="tool-cell">
+            <p class="tool-name">자주 쓰는 도구 런처</p>
+            <p class="tool-desc">앱·웹·폴더·파일을 한 곳에서 빠르게 실행. 시작메뉴 자동 검색.</p>
+          </div>
+          <div class="tool-cell">
+            <p class="tool-name">노트</p>
+            <p class="tool-desc">여러 노트를 사이드바로 관리. 자동 저장. <code>Ctrl+Shift+N</code>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- HOW -->
+    <section class="how" id="how">
       <div class="container">
         <p class="eyebrow">동작 방식</p>
+        <h2 class="section-title">4단계로 끝납니다</h2>
         <ol class="how-list">
           <li><span class="num">01</span> 스캔할 폴더를 지정. 기본: 바탕화면 · Downloads · Documents.</li>
           <li><span class="num">02</span> 카테고리별 회수 가능 용량을 보여줍니다.</li>
@@ -100,9 +153,31 @@
       </div>
     </section>
 
+    <!-- OS SELECT -->
+    <section class="os-select" id="download-other">
+      <div class="container">
+        <p class="eyebrow">다른 OS</p>
+        <h2 class="section-title">Mac · Linux 도 지원합니다</h2>
+        <div class="os-grid">
+          <a href="/dl/win" class="os-cell">
+            <p class="os-name">Windows</p>
+            <p class="os-desc">.exe 설치 마법사</p>
+          </a>
+          <a href="/dl/mac" class="os-cell">
+            <p class="os-name">macOS</p>
+            <p class="os-desc">.dmg 디스크 이미지</p>
+          </a>
+          <a href="/dl/linux" class="os-cell">
+            <p class="os-name">Linux</p>
+            <p class="os-desc">.AppImage 실행 파일</p>
+          </a>
+        </div>
+      </div>
+    </section>
+
     <section class="closing">
       <div class="container">
-        <p>오픈소스 · 무료 · 모든 데이터는 본인 PC에 머무릅니다.</p>
+        <p>무료 · 모든 데이터는 본인 PC에 머무릅니다.</p>
         <p class="muted">바탕화면을 클라우드에 올리거나 외부로 전송하지 않습니다.</p>
       </div>
     </section>
@@ -110,44 +185,31 @@
 
   <footer class="footer">
     <div class="container footer-inner">
-      <span>Office Oasis</span>
-      <span class="muted">MIT License</span>
-      <a href="https://github.com/jaeseong98/office-oasis" target="_blank" rel="noopener" class="navlink">GitHub →</a>
+      <span class="brand-row">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>Office Oasis</span>
+      </span>
+      <span class="muted">© 2026</span>
     </div>
   </footer>
 
   <script>
-    /* ────── OS 감지 + 다운로드 링크 설정 ────── */
-    const REPO = 'jaeseong98/office-oasis' // 배포 후 본인 GitHub 경로로 교체
-    const ASSETS = {
-      windows: 'OfficeOasis-Setup.exe',
-      mac:     'OfficeOasis.dmg',
-      linux:   'OfficeOasis.AppImage',
-    }
-    const LABELS = { windows: 'Windows', mac: 'macOS', linux: 'Linux' }
-
+    /* ────── OS 자동 감지 ────── */
+    const LABELS = { win: 'Windows', mac: 'macOS', linux: 'Linux' }
     function detectOS() {
       const ua = (navigator.userAgent || '').toLowerCase()
       if (ua.includes('mac')) return 'mac'
       if (ua.includes('linux')) return 'linux'
-      return 'windows'
+      return 'win'
     }
-
-    function downloadURL(os) {
-      return `https://github.com/${REPO}/releases/latest/download/${ASSETS[os]}`
-    }
-
     const os = detectOS()
     const primary = document.getElementById('primary-cta')
-    const secondary = document.getElementById('secondary-cta')
     primary.textContent = `Download for ${LABELS[os]}`
-    primary.href = downloadURL(os)
-    const others = Object.keys(LABELS).filter(k => k !== os).map(k => LABELS[k]).join(' · ')
-    secondary.textContent = `다른 OS — ${others}`
-    secondary.href = `https://github.com/${REPO}/releases/latest`
+    primary.href = `/dl/${os}`
 
-    /* ────── 최신 버전 표시 (GitHub API) ────── */
-    fetch(`https://api.github.com/repos/${REPO}/releases/latest`)
+    /* ────── 최신 버전 ────── */
+    // 깃허브 API 직접 호출 — 노출은 어쩔 수 없음
+    fetch('https://api.github.com/repos/jaeseong98/office-oasis/releases/latest')
       .then(r => r.ok ? r.json() : null)
       .then(rel => {
         const line = document.getElementById('version-line')

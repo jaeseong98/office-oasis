@@ -5,5 +5,22 @@
   "framework": null,
   "outputDirectory": "web",
   "cleanUrls": true,
-  "trailingSlash": false
+  "trailingSlash": false,
+  "redirects": [
+    {
+      "source": "/dl/win",
+      "destination": "https://github.com/jaeseong98/office-oasis/releases/latest/download/OfficeOasis-Setup.exe",
+      "statusCode": 302
+    },
+    {
+      "source": "/dl/mac",
+      "destination": "https://github.com/jaeseong98/office-oasis/releases/latest/download/OfficeOasis.dmg",
+      "statusCode": 302
+    },
+    {
+      "source": "/dl/linux",
+      "destination": "https://github.com/jaeseong98/office-oasis/releases/latest/download/OfficeOasis.AppImage",
+      "statusCode": 302
+    }
+  ]
 }
