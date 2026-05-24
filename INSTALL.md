@@ -1,5 +1,7 @@
 # Office Oasis 설치 가이드
 
+데스크톱 어시스턴트 — 청소·런처·노트·클립보드 4가지 도구가 한 트레이 아이콘에 들어 있습니다.
+
 ## 다운로드
 
 - **Windows**: [OfficeOasis-Setup.exe](https://github.com/jaeseong98/office-oasis/releases/latest/download/OfficeOasis-Setup.exe)

@@ -989,7 +989,7 @@ function createWindow() {
     minWidth: 980,
     minHeight: 640,
     backgroundColor: '#fafaf9',
-    title: '바탕화면 대청소 · Office Oasis',
+    title: 'Office Oasis · 데스크톱 어시스턴트',
     autoHideMenuBar: true,
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
