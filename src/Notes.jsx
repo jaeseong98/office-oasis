@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Trash2, FileText } from 'lucide-react'
-import { WindowControls } from './TitleBar.jsx'
 
 function getTitle(body) {
   if (!body) return ''
@@ -102,16 +101,7 @@ export default function NotesApp() {
   )
 
   return (
-    <div className="h-screen flex flex-col bg-stone-50 text-stone-900">
-      {/* 타이틀바 */}
-      <div className="drag-region flex items-center justify-between h-9 px-3 border-b border-stone-200 bg-white">
-        <div className="flex items-center gap-2 text-xs text-stone-500">
-          <FileText className="w-3.5 h-3.5" />
-          <span>Office Oasis · 노트</span>
-        </div>
-        <WindowControls variant="light" />
-      </div>
-
+    <div className="h-full w-full flex flex-col bg-stone-50 text-stone-900">
       <div className="flex-1 flex overflow-hidden">
         {/* 사이드바 */}
         <aside className="w-56 border-r border-stone-200 flex flex-col bg-white shrink-0">

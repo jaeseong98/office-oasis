@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, FolderOpen, ExternalLink, X, Plus } from 'lucide-react'
+import { ChevronRight, FolderOpen, ExternalLink, X, Plus, Sparkles, Layers, FileText, ClipboardCopy } from 'lucide-react'
+import LauncherApp from './Launcher.jsx'
+import NotesApp from './Notes.jsx'
+
+const TABS = [
+  { id: 'cleanup',  label: '청소',   Icon: Sparkles },
+  { id: 'launcher', label: '런처',   Icon: Layers },
+  { id: 'notes',    label: '노트',   Icon: FileText },
+]
 
 /* ───────── 유틸 ───────── */
 
@@ -35,6 +43,7 @@ const CATS = [
 /* ───────── 메인 ───────── */
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState('cleanup')
   const [isElectron, setIsElectron] = useState(false)
   const [roots, setRoots] = useState([])
   const [progress, setProgress] = useState(null)
@@ -44,6 +53,14 @@ export default function App() {
   const [activeCat, setActiveCat] = useState(null)
   const [toast, setToast] = useState(null)
   const [confirming, setConfirming] = useState(null) // { paths, permanent }
+
+  // 트레이/단축키에서 보낸 탭 전환 신호 수신
+  useEffect(() => {
+    if (!window.oasis?.onSwitchTab) return
+    return window.oasis.onSwitchTab((tab) => {
+      if (TABS.find(t => t.id === tab)) setActiveTab(tab)
+    })
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.oasis?.isElectron) return
@@ -257,75 +274,116 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-stone-50 text-stone-900">
-      <Header
-        scanResult={scanResult}
-        totalRecoverable={totalRecoverable}
-        scanning={scanning}
-        onBackToSetup={() => { setScanResult(null); setSelected(new Set()); setActiveCat(null); }}
-        onOpenLauncher={() => window.oasis?.openLauncher()}
-        onOpenClipboard={() => window.oasis?.openClipboard()}
-      />
-
-      <main className="flex-1 overflow-hidden">
-        {!scanResult && (
-          <ScanLanding
-            roots={roots}
-            onAddRoot={addRoot}
-            onRemoveRoot={removeRoot}
-            onStart={startScan}
-            onCancel={cancelScan}
-            scanning={scanning}
-            progress={progress}
-          />
-        )}
-
-        {scanResult && activeCat === null && (
-          <ResultSummary
-            scanResult={scanResult}
-            catStats={catStats}
-            totalRecoverable={totalRecoverable}
-            onOpenCategory={(catId) => setActiveCat(catId)}
-            onSelectRecommended={selectRecommended}
-          />
-        )}
-
-        {scanResult && activeCat && (
-          <CategoryView
-            catId={activeCat}
-            items={groupedItems[activeCat] || []}
-            selected={selected}
-            onToggle={toggleSelect}
-            onSelectAll={() => selectAllInCategory(activeCat)}
-            onClear={() => clearSelectionInCategory(activeCat)}
-            onBack={() => setActiveCat(null)}
-            onReveal={(p) => window.oasis.reveal(p)}
-            onOpen={(p) => window.oasis.open(p)}
-          />
-        )}
-      </main>
-
-      {selectedStats.count > 0 && (
-        <div className="border-t border-stone-200 bg-white px-6 py-3 flex items-center justify-between shrink-0">
-          <div className="text-sm tnum">
-            <span className="text-stone-500">선택</span>
-            <span className="ml-1.5 font-semibold">{selectedStats.count}</span>
-            <span className="ml-3 text-stone-400">·</span>
-            <span className="ml-3 font-semibold">{formatBytes(selectedStats.size)}</span>
-            <span className="ml-1 text-stone-500">회수</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setSelected(new Set())}
-              className="text-xs text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline">
-              선택 해제
-            </button>
-            <button onClick={askConfirmation}
-              className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white text-sm">
-              삭제…
-            </button>
-          </div>
+    <div className="h-screen w-screen flex bg-stone-50 text-stone-900">
+      {/* 사이드바 */}
+      <aside className="w-20 border-r border-stone-200 bg-white flex flex-col shrink-0">
+        <div className="px-3 pt-4 pb-2 text-center">
+          <p className="text-[10px] font-semibold text-stone-900 tracking-wider">OASIS</p>
         </div>
-      )}
+        <nav className="flex-1">
+          {TABS.map(t => {
+            const active = activeTab === t.id
+            return (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={`w-full py-3.5 flex flex-col items-center gap-1.5 border-l-2 ${
+                  active
+                    ? 'bg-stone-100 text-stone-900 border-stone-900'
+                    : 'text-stone-500 hover:text-stone-900 hover:bg-stone-50 border-transparent'
+                }`}
+              >
+                <t.Icon className="w-5 h-5" strokeWidth={1.6} />
+                <span className="text-[11px]">{t.label}</span>
+              </button>
+            )
+          })}
+        </nav>
+        <div className="p-2 border-t border-stone-200">
+          <button
+            onClick={() => window.oasis?.openClipboard()}
+            className="w-full py-2.5 flex flex-col items-center gap-1 text-stone-500 hover:text-stone-900 hover:bg-stone-50"
+            title="Ctrl+Shift+V"
+          >
+            <ClipboardCopy className="w-4 h-4" strokeWidth={1.6} />
+            <span className="text-[10px]">클립보드</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* 메인 영역 */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {activeTab === 'cleanup' && (
+          <>
+            <CleanupHeader
+              scanResult={scanResult}
+              totalRecoverable={totalRecoverable}
+              scanning={scanning}
+              onBackToSetup={() => { setScanResult(null); setSelected(new Set()); setActiveCat(null); }}
+            />
+
+            <main className="flex-1 overflow-hidden">
+              {!scanResult && (
+                <ScanLanding
+                  roots={roots}
+                  onAddRoot={addRoot}
+                  onRemoveRoot={removeRoot}
+                  onStart={startScan}
+                  onCancel={cancelScan}
+                  scanning={scanning}
+                  progress={progress}
+                />
+              )}
+              {scanResult && activeCat === null && (
+                <ResultSummary
+                  scanResult={scanResult}
+                  catStats={catStats}
+                  totalRecoverable={totalRecoverable}
+                  onOpenCategory={(catId) => setActiveCat(catId)}
+                  onSelectRecommended={selectRecommended}
+                />
+              )}
+              {scanResult && activeCat && (
+                <CategoryView
+                  catId={activeCat}
+                  items={groupedItems[activeCat] || []}
+                  selected={selected}
+                  onToggle={toggleSelect}
+                  onSelectAll={() => selectAllInCategory(activeCat)}
+                  onClear={() => clearSelectionInCategory(activeCat)}
+                  onBack={() => setActiveCat(null)}
+                  onReveal={(p) => window.oasis.reveal(p)}
+                  onOpen={(p) => window.oasis.open(p)}
+                />
+              )}
+            </main>
+
+            {selectedStats.count > 0 && (
+              <div className="border-t border-stone-200 bg-white px-6 py-3 flex items-center justify-between shrink-0">
+                <div className="text-sm tnum">
+                  <span className="text-stone-500">선택</span>
+                  <span className="ml-1.5 font-semibold">{selectedStats.count}</span>
+                  <span className="ml-3 text-stone-400">·</span>
+                  <span className="ml-3 font-semibold">{formatBytes(selectedStats.size)}</span>
+                  <span className="ml-1 text-stone-500">회수</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setSelected(new Set())}
+                    className="text-xs text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline">
+                    선택 해제
+                  </button>
+                  <button onClick={askConfirmation}
+                    className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white text-sm">
+                    삭제…
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+        {activeTab === 'launcher' && <LauncherApp />}
+        {activeTab === 'notes' && <NotesApp />}
+      </div>
 
       {toast && (
         <div className={`fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 text-sm shadow-sm border
@@ -406,48 +464,34 @@ function ConfirmDeleteModal({ state, onChange, onCancel, onConfirm, totalSize, t
 
 /* ───────── 헤더 ───────── */
 
-function Header({ scanResult, totalRecoverable, scanning, onBackToSetup, onOpenLauncher, onOpenClipboard }) {
+function CleanupHeader({ scanResult, totalRecoverable, scanning, onBackToSetup }) {
   return (
     <header className="px-8 py-5 border-b border-stone-200 bg-white shrink-0">
-      <div className="flex items-end justify-between max-w-6xl mx-auto gap-6">
+      <div className="flex items-end justify-between gap-6">
         <div>
-          <p className="eyebrow">Office Oasis</p>
+          <p className="eyebrow">청소</p>
           <h1 className="text-xl font-semibold tracking-tight mt-1">바탕화면 대청소</h1>
         </div>
-        <div className="flex items-end gap-6 text-sm">
-          {scanResult && (
-            <>
-              <div className="text-right">
-                <p className="eyebrow">스캔됨</p>
-                <p className="font-semibold tnum mt-0.5">
-                  {scanResult.totals.fileCount.toLocaleString()}
-                  <span className="text-stone-500 font-normal ml-1">파일</span>
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="eyebrow">정리 가능</p>
-                <p className="font-semibold tnum mt-0.5">{formatBytes(totalRecoverable)}</p>
-              </div>
-              <button onClick={onBackToSetup} disabled={scanning}
-                className="self-end pb-0.5 text-sm text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline disabled:opacity-40"
-                title="폴더 설정으로 돌아가기">
-                다시 스캔
-              </button>
-            </>
-          )}
-          <div className="self-end pb-0.5 border-l border-stone-200 pl-5 flex items-center gap-4">
-            <button onClick={onOpenClipboard}
-              className="text-sm text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline"
-              title="Ctrl+Shift+V">
-              클립보드
-            </button>
-            <button onClick={onOpenLauncher}
-              className="text-sm text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline"
-              title="Ctrl+Shift+L">
-              런처
+        {scanResult && (
+          <div className="flex items-end gap-8 text-sm">
+            <div className="text-right">
+              <p className="eyebrow">스캔됨</p>
+              <p className="font-semibold tnum mt-0.5">
+                {scanResult.totals.fileCount.toLocaleString()}
+                <span className="text-stone-500 font-normal ml-1">파일</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="eyebrow">정리 가능</p>
+              <p className="font-semibold tnum mt-0.5">{formatBytes(totalRecoverable)}</p>
+            </div>
+            <button onClick={onBackToSetup} disabled={scanning}
+              className="self-end pb-0.5 text-sm text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline disabled:opacity-40"
+              title="폴더 설정으로 돌아가기">
+              다시 스캔
             </button>
           </div>
-        </div>
+        )}
       </div>
     </header>
   )

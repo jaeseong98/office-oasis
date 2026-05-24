@@ -49,9 +49,6 @@ contextBridge.exposeInMainWorld('oasis', {
   launcherPickFolder: () => ipcRenderer.invoke('launcher:pick-folder'),
   launcherDroppedPaths: (paths) => ipcRenderer.invoke('launcher:dropped-paths', paths),
   launcherListApps: () => ipcRenderer.invoke('launcher:list-apps'),
-  launcherHide: () => ipcRenderer.invoke('launcher:hide'),
-  launcherToggleFullscreen: () => ipcRenderer.invoke('launcher:toggle-fullscreen'),
-  launcherIsFullscreen: () => ipcRenderer.invoke('launcher:is-fullscreen'),
   onLauncherUpdate: (cb) => {
     const handler = (_e, list) => cb(list)
     ipcRenderer.on('launcher:update', handler)
@@ -69,10 +66,15 @@ contextBridge.exposeInMainWorld('oasis', {
     return () => ipcRenderer.removeListener('notes:update', handler)
   },
 
-  // ─── 다른 윈도우 열기 ───
+  // ─── 다른 윈도우/탭 열기 ───
   openLauncher: () => ipcRenderer.invoke('ui:open-launcher'),
   openClipboard: () => ipcRenderer.invoke('ui:open-clipboard'),
   openNotes: () => ipcRenderer.invoke('ui:open-notes'),
+  onSwitchTab: (cb) => {
+    const handler = (_e, tab) => cb(tab)
+    ipcRenderer.on('main:switch-tab', handler)
+    return () => ipcRenderer.removeListener('main:switch-tab', handler)
+  },
 
   // ─── 윈도우 컨트롤 (frameless 창용) ───
   winMinimize: () => ipcRenderer.invoke('win:minimize'),

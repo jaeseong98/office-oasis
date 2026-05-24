@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Plus, Search, X, Maximize2,
+  Plus, Search, X,
   Star, Gamepad2, Globe, Wrench, Music, Sparkles,
-  FolderOpen, FileText, MonitorPlay, Pencil, Layers,
+  FolderOpen, FileText, MonitorPlay, Pencil,
 } from 'lucide-react'
-import { WindowControls } from './TitleBar.jsx'
 
 /* ───────── 카테고리 — 라이트 테마에서도 잘 보이는 절제된 액센트 ───────── */
 
@@ -68,12 +67,7 @@ export default function LauncherApp() {
       if (e.key === 'Escape') {
         if (showAdd || editing || contextMenu) {
           setShowAdd(false); setEditing(null); setContextMenu(null)
-        } else {
-          window.oasis?.launcherHide()
         }
-      } else if (e.key === 'F11') {
-        e.preventDefault()
-        window.oasis?.launcherToggleFullscreen()
       }
     }
     window.addEventListener('keydown', handler)
@@ -123,34 +117,13 @@ export default function LauncherApp() {
   return (
     <div
       ref={dropAreaRef}
-      className="h-screen w-screen bg-stone-50 text-stone-900 select-none flex flex-col overflow-hidden"
+      className="h-full w-full bg-stone-50 text-stone-900 flex flex-col overflow-hidden"
       onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
       onDragLeave={(e) => { if (!dropAreaRef.current?.contains(e.relatedTarget)) setDragOver(false) }}
       onDrop={handleDrop}
     >
-      {/* 타이틀바 */}
-      <div className="drag-region flex items-center justify-between h-9 px-3 border-b border-stone-200 bg-white shrink-0">
-        <div className="flex items-center gap-2 text-[11px] text-stone-500 tracking-wider uppercase">
-          <Layers className="w-3 h-3" />
-          Office Oasis · Launcher
-        </div>
-        <WindowControls
-          variant="light"
-          onClose={() => window.oasis?.launcherHide()}
-          extraButtons={
-            <button
-              onClick={() => window.oasis?.launcherToggleFullscreen()}
-              className="p-1.5 rounded text-stone-400 hover:text-stone-900 hover:bg-stone-200/60"
-              title="F11 풀스크린"
-            >
-              <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.8} />
-            </button>
-          }
-        />
-      </div>
-
       {/* 상단: 시계 + 카테고리 + 검색 + 추가 */}
-      <header className="no-drag flex items-center gap-8 px-8 py-5 border-b border-stone-200 bg-white shrink-0">
+      <header className="flex items-center gap-8 px-8 py-5 border-b border-stone-200 bg-white shrink-0">
         {/* 시계 */}
         <div className="tnum shrink-0">
           <p className="text-[36px] font-semibold leading-none tracking-tight tabular-nums">
@@ -294,10 +267,9 @@ export default function LauncherApp() {
       {editing && <EditModal tile={editing} onClose={() => setEditing(null)} />}
 
       {/* 푸터 단축키 힌트 */}
-      <footer className="no-drag px-8 py-2 border-t border-stone-200 bg-white text-[10px] text-stone-400 tracking-wider flex items-center gap-5 shrink-0">
-        <span>F11 풀스크린</span>
-        <span>Esc 닫기</span>
+      <footer className="px-8 py-2 border-t border-stone-200 bg-white text-[10px] text-stone-400 tracking-wider flex items-center gap-5 shrink-0">
         <span>우클릭 편집·삭제·카테고리</span>
+        <span>드래그&드롭으로 빠른 추가</span>
         <span className="ml-auto">Office Oasis Launcher</span>
       </footer>
     </div>

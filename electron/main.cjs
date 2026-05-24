@@ -21,10 +21,21 @@ const { autoUpdater } = require('electron-updater')
 
 let mainWindow = null
 let clipboardWindow = null
-let launcherWindow = null
-let notesWindow = null
 let tray = null
 let scanState = { running: false, cancelToken: 0 }
+
+// 런처/노트는 메인 앱의 탭으로 통합되어 별도 창 없음.
+// 트레이/단축키에서 호출 시 메인 창을 띄우고 해당 탭으로 전환.
+function showMainWithTab(tab) {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  if (!mainWindow.isVisible()) mainWindow.show()
+  mainWindow.focus()
+  // 렌더러에 탭 전환 시그널
+  try {
+    mainWindow.webContents.send('main:switch-tab', tab)
+  } catch { /* ignore if not yet loaded */ }
+}
 
 /* ───────── 렌더러 URL ───────── */
 // loadFile + query 조합이 asar 환경에서 누락되는 경우가 있어 hash 기반으로 통일.
@@ -596,49 +607,13 @@ function saveNotes() {
   try { fs.writeFileSync(notesFilePath(), JSON.stringify(notes)) } catch { /* ignore */ }
 }
 function broadcastNotes() {
-  if (notesWindow && !notesWindow.isDestroyed()) {
-    notesWindow.webContents.send('notes:update', notes)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('notes:update', notes)
   }
 }
 
-function createNotesWindow() {
-  notesWindow = new BrowserWindow({
-    width: 760,
-    height: 560,
-    minWidth: 480,
-    minHeight: 360,
-    frame: false,
-    backgroundColor: '#fafaf9',
-    title: 'Office Oasis · 노트',
-    icon: path.join(__dirname, 'assets', 'icon.png'),
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    },
-  })
-  notesWindow.loadURL(rendererURL('notes'))
-  attachDevToolsShortcut(notesWindow)
-  notesWindow.webContents.once('did-finish-load', () => {
-    if (notesWindow && !notesWindow.isDestroyed()) {
-      notesWindow.webContents.send('notes:update', notes)
-    }
-  })
-  notesWindow.on('close', (e) => {
-    if (!app.isQuitting && tray && !tray.isDestroyed()) {
-      e.preventDefault()
-      notesWindow.hide()
-    }
-  })
-  notesWindow.on('closed', () => { notesWindow = null })
-}
-
-function showNotes() {
-  if (!notesWindow || notesWindow.isDestroyed()) createNotesWindow()
-  notesWindow.show()
-  notesWindow.focus()
-}
+// 노트는 메인 앱의 탭이라 별도 창 없음.
+function showNotes() { showMainWithTab('notes') }
 
 ipcMain.handle('notes:list', () => notes)
 
@@ -756,8 +731,8 @@ function saveLauncherTiles() {
 }
 
 function broadcastLauncher() {
-  if (launcherWindow && !launcherWindow.isDestroyed()) {
-    launcherWindow.webContents.send('launcher:update', launcherTiles)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('launcher:update', launcherTiles)
   }
 }
 
@@ -792,65 +767,8 @@ async function fetchFaviconDataUrl(url) {
   } catch { return null }
 }
 
-function createLauncherWindow() {
-  launcherWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 900,
-    minHeight: 600,
-    frame: false,
-    backgroundColor: '#fafaf9',
-    title: 'Office Oasis · 런처',
-    autoHideMenuBar: true,
-    resizable: true,
-    minimizable: true,
-    maximizable: true,
-    icon: path.join(__dirname, 'assets', 'icon.png'),
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    },
-  })
-
-  launcherWindow.loadURL(rendererURL('launcher'))
-  attachDevToolsShortcut(launcherWindow)
-
-  launcherWindow.on('close', (e) => {
-    if (!app.isQuitting && tray && !tray.isDestroyed()) {
-      e.preventDefault()
-      launcherWindow.hide()
-    }
-  })
-  launcherWindow.on('closed', () => { launcherWindow = null })
-}
-
-function showLauncher() {
-  if (!launcherWindow || launcherWindow.isDestroyed()) createLauncherWindow()
-  // PC방 런처 느낌 — 최대화로 띄움 (창 컨트롤은 유지)
-  if (!launcherWindow.isFullScreen() && !launcherWindow.isMaximized()) {
-    launcherWindow.maximize()
-  }
-  launcherWindow.show()
-  launcherWindow.focus()
-}
-
-ipcMain.handle('launcher:hide', () => {
-  if (launcherWindow && !launcherWindow.isDestroyed()) launcherWindow.hide()
-  return { ok: true }
-})
-
-ipcMain.handle('launcher:toggle-fullscreen', () => {
-  if (launcherWindow && !launcherWindow.isDestroyed()) {
-    launcherWindow.setFullScreen(!launcherWindow.isFullScreen())
-  }
-  return { ok: true }
-})
-
-ipcMain.handle('launcher:is-fullscreen', () => {
-  return launcherWindow && !launcherWindow.isDestroyed() ? launcherWindow.isFullScreen() : false
-})
+// 런처는 메인 앱의 탭. 별도 창 없음.
+function showLauncher() { showMainWithTab('launcher') }
 
 ipcMain.handle('launcher:list', () => launcherTiles)
 
