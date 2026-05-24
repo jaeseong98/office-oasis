@@ -33,8 +33,22 @@ function defaultRoots() {
 }
 
 const HARD_IGNORE_DIRS = new Set([
-  'node_modules', '.git', '.svn', '.hg', '.idea', '.vscode',
+  // VCS / IDE
+  '.git', '.svn', '.hg', '.idea', '.vscode',
+  // 시스템
   '$RECYCLE.BIN', 'System Volume Information', 'AppData', 'Library',
+  // 패키지 매니저들이 깐 파일 — 정리 대상 아님, 해시만 무거움
+  'node_modules',
+  'win-library',     // R packages on Windows
+  'site-packages',   // Python packages
+  '__pycache__',     // Python bytecode
+  'venv', '.venv',   // Python virtualenv
+  '.tox',            // Python test envs
+  '.pytest_cache',
+  '.mypy_cache',
+  '.ruff_cache',
+  // 빌드 캐시
+  '.next', '.nuxt', '.turbo', '.parcel-cache', '.cache',
 ])
 
 const HARD_IGNORE_FILES = new Set([
@@ -57,6 +71,7 @@ function shouldIgnoreName(name, isDir) {
 
 const HUGE_THRESHOLD = 50 * 1024 * 1024 // 50MB
 const OLD_DAYS = 90
+const DEDUP_MIN_SIZE = 64 * 1024 // 64KB — 그 이하 파일은 dedup 안 함 (해시 비용 대비 회수량 0)
 
 const TEMP_EXTS = new Set(['.tmp', '.bak', '.crdownload', '.part', '.partial', '.dmp', '.old'])
 const TEMP_NAME_PATTERNS = [
@@ -186,7 +201,7 @@ async function runScan(roots) {
     if (ageDays >= OLD_DAYS) old.push(f)
     if (isScreenshot(f.name)) screenshots.push(f)
     if (isTempFile(f.name, f.size)) temp.push(f)
-    if (f.size > 0) {
+    if (f.size >= DEDUP_MIN_SIZE) {
       const arr = bySize.get(f.size) || []
       arr.push(f)
       bySize.set(f.size, arr)
