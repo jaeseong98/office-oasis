@@ -3,12 +3,17 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import ClipboardApp from './Clipboard.jsx'
+import LauncherApp from './Launcher.jsx'
 
 const params = new URLSearchParams(window.location.search)
-const isClipboard = params.get('window') === 'clipboard'
+const mode = params.get('window')
+
+const Root = mode === 'clipboard' ? ClipboardApp
+           : mode === 'launcher'  ? LauncherApp
+           : App
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    {isClipboard ? <ClipboardApp /> : <App />}
+    <Root />
   </StrictMode>,
 )

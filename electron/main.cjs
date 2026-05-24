@@ -21,6 +21,7 @@ const { autoUpdater } = require('electron-updater')
 
 let mainWindow = null
 let clipboardWindow = null
+let launcherWindow = null
 let tray = null
 let scanState = { running: false, cancelToken: 0 }
 
@@ -528,6 +529,230 @@ ipcMain.handle('clipboard:set-paused', (_e, paused) => {
   return { paused: clipboardPaused }
 })
 
+/* ───────── 런처 (Oasis Launcher) ───────── */
+
+let launcherTiles = []
+
+function launcherFilePath() {
+  return path.join(app.getPath('userData'), 'launcher-tiles.json')
+}
+
+function loadLauncherTiles() {
+  try {
+    const raw = fs.readFileSync(launcherFilePath(), 'utf8')
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) launcherTiles = parsed
+  } catch { launcherTiles = [] }
+}
+
+function saveLauncherTiles() {
+  try { fs.writeFileSync(launcherFilePath(), JSON.stringify(launcherTiles)) } catch { /* ignore */ }
+}
+
+function broadcastLauncher() {
+  if (launcherWindow && !launcherWindow.isDestroyed()) {
+    launcherWindow.webContents.send('launcher:update', launcherTiles)
+  }
+}
+
+async function extractFileIcon(filePath) {
+  try {
+    const img = await app.getFileIcon(filePath, { size: 'large' })
+    if (img && !img.isEmpty()) return img.toDataURL()
+  } catch (err) {
+    console.warn('[oasis] getFileIcon failed:', err.message)
+  }
+  return null
+}
+
+async function fetchFaviconDataUrl(url) {
+  try {
+    const u = new URL(url)
+    const r = await fetch(`https://www.google.com/s2/favicons?domain=${u.hostname}&sz=64`)
+    if (!r.ok) return null
+    const buf = Buffer.from(await r.arrayBuffer())
+    return `data:image/png;base64,${buf.toString('base64')}`
+  } catch { return null }
+}
+
+function createLauncherWindow() {
+  launcherWindow = new BrowserWindow({
+    width: 960,
+    height: 680,
+    minWidth: 640,
+    minHeight: 480,
+    backgroundColor: '#fafaf9',
+    title: 'Office Oasis · 런처',
+    autoHideMenuBar: true,
+    icon: path.join(__dirname, 'assets', 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+
+  const devUrl = process.env.VITE_DEV_SERVER_URL
+  if (devUrl) {
+    launcherWindow.loadURL(`${devUrl}?window=launcher`)
+  } else {
+    launcherWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), {
+      query: { window: 'launcher' },
+    })
+  }
+
+  launcherWindow.on('close', (e) => {
+    if (!app.isQuitting && tray && !tray.isDestroyed()) {
+      e.preventDefault()
+      launcherWindow.hide()
+    }
+  })
+  launcherWindow.on('closed', () => { launcherWindow = null })
+}
+
+function showLauncher() {
+  if (!launcherWindow || launcherWindow.isDestroyed()) createLauncherWindow()
+  launcherWindow.show()
+  launcherWindow.focus()
+}
+
+ipcMain.handle('launcher:list', () => launcherTiles)
+
+ipcMain.handle('launcher:add', async (_e, draft) => {
+  if (!draft || !draft.type || !draft.target) return { ok: false, error: 'invalid draft' }
+  const tile = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: draft.type,
+    title: draft.title || draft.target,
+    target: draft.target,
+    createdAt: Date.now(),
+  }
+  if (draft.type === 'url') {
+    tile.iconDataUrl = await fetchFaviconDataUrl(draft.target)
+  } else {
+    tile.iconDataUrl = await extractFileIcon(draft.target)
+  }
+  launcherTiles.push(tile)
+  saveLauncherTiles()
+  broadcastLauncher()
+  return { ok: true, tile }
+})
+
+ipcMain.handle('launcher:update', async (_e, payload) => {
+  const { id, patch } = payload || {}
+  const idx = launcherTiles.findIndex(t => t.id === id)
+  if (idx === -1) return { ok: false }
+  // 대상 경로가 바뀌면 아이콘 갱신
+  if (patch.target && patch.target !== launcherTiles[idx].target) {
+    if ((patch.type || launcherTiles[idx].type) === 'url') {
+      patch.iconDataUrl = await fetchFaviconDataUrl(patch.target)
+    } else {
+      patch.iconDataUrl = await extractFileIcon(patch.target)
+    }
+  }
+  launcherTiles[idx] = { ...launcherTiles[idx], ...patch }
+  saveLauncherTiles()
+  broadcastLauncher()
+  return { ok: true }
+})
+
+ipcMain.handle('launcher:delete', (_e, id) => {
+  launcherTiles = launcherTiles.filter(t => t.id !== id)
+  saveLauncherTiles()
+  broadcastLauncher()
+  return { ok: true }
+})
+
+ipcMain.handle('launcher:reorder', (_e, orderedIds) => {
+  if (!Array.isArray(orderedIds)) return { ok: false }
+  const map = new Map(launcherTiles.map(t => [t.id, t]))
+  const reordered = orderedIds.map(id => map.get(id)).filter(Boolean)
+  // 누락된 게 있으면 뒤에 붙임
+  for (const t of launcherTiles) if (!orderedIds.includes(t.id)) reordered.push(t)
+  launcherTiles = reordered
+  saveLauncherTiles()
+  broadcastLauncher()
+  return { ok: true }
+})
+
+ipcMain.handle('launcher:launch', async (_e, id) => {
+  const tile = launcherTiles.find(t => t.id === id)
+  if (!tile) return { ok: false, error: 'tile not found' }
+  try {
+    if (tile.type === 'url') {
+      await shell.openExternal(tile.target)
+    } else {
+      const errMsg = await shell.openPath(tile.target)
+      if (errMsg) return { ok: false, error: errMsg }
+    }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message || String(err) }
+  }
+})
+
+ipcMain.handle('launcher:pick-file', async () => {
+  const result = await dialog.showOpenDialog(launcherWindow || mainWindow, {
+    properties: ['openFile'],
+    title: '런처에 추가할 앱/파일 선택',
+    filters: [
+      { name: '실행 파일·바로가기', extensions: ['exe', 'lnk', 'bat', 'cmd', 'msi'] },
+      { name: '모든 파일', extensions: ['*'] },
+    ],
+  })
+  if (result.canceled || !result.filePaths.length) return { canceled: true }
+  const p = result.filePaths[0]
+  const ext = path.extname(p).toLowerCase()
+  const isApp = ['.exe', '.lnk', '.bat', '.cmd', '.msi'].includes(ext)
+  return { canceled: false, path: p, type: isApp ? 'app' : 'file', name: path.basename(p, ext) }
+})
+
+ipcMain.handle('launcher:pick-folder', async () => {
+  const result = await dialog.showOpenDialog(launcherWindow || mainWindow, {
+    properties: ['openDirectory'],
+    title: '런처에 추가할 폴더 선택',
+  })
+  if (result.canceled || !result.filePaths.length) return { canceled: true }
+  const p = result.filePaths[0]
+  return { canceled: false, path: p, name: path.basename(p) }
+})
+
+ipcMain.handle('launcher:dropped-paths', async (_e, paths) => {
+  // 드래그앤드롭으로 들어온 경로들 — 일괄 등록
+  if (!Array.isArray(paths)) return { added: [] }
+  const added = []
+  for (const p of paths) {
+    if (typeof p !== 'string') continue
+    try {
+      const st = await fsp.stat(p)
+      const ext = path.extname(p).toLowerCase()
+      let type
+      if (st.isDirectory()) type = 'folder'
+      else if (['.exe', '.lnk', '.bat', '.cmd', '.msi'].includes(ext)) type = 'app'
+      else type = 'file'
+      const draft = {
+        type,
+        title: path.basename(p, ext) || p,
+        target: p,
+      }
+      const tile = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        ...draft,
+        iconDataUrl: await extractFileIcon(p),
+        createdAt: Date.now(),
+      }
+      launcherTiles.push(tile)
+      added.push(tile)
+    } catch { /* skip unreachable */ }
+  }
+  if (added.length) {
+    saveLauncherTiles()
+    broadcastLauncher()
+  }
+  return { added }
+})
+
 /* ───────── 트레이 ───────── */
 
 function buildTrayMenu() {
@@ -543,6 +768,10 @@ function buildTrayMenu() {
     {
       label: '클립보드 (Ctrl+Shift+V)',
       click: () => showClipboardNearCursor(),
+    },
+    {
+      label: '런처 열기 (Ctrl+Shift+L)',
+      click: () => showLauncher(),
     },
     { type: 'separator' },
     {
@@ -680,15 +909,17 @@ function setupAutoUpdater() {
 
 app.whenReady().then(() => {
   loadClipboardHistory()
+  loadLauncherTiles()
   startClipboardPolling()
   createTray()
   createWindow()
   setupAutoUpdater()
 
   // 전역 단축키
-  const accelerator = 'CommandOrControl+Shift+V'
-  const ok = globalShortcut.register(accelerator, () => toggleClipboardWindow())
-  if (!ok) console.error('[oasis] failed to register global shortcut', accelerator)
+  const ok1 = globalShortcut.register('CommandOrControl+Shift+V', () => toggleClipboardWindow())
+  if (!ok1) console.error('[oasis] failed to register Ctrl+Shift+V')
+  const ok2 = globalShortcut.register('CommandOrControl+Shift+L', () => showLauncher())
+  if (!ok2) console.error('[oasis] failed to register Ctrl+Shift+L')
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

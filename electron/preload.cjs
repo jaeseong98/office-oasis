@@ -37,4 +37,20 @@ contextBridge.exposeInMainWorld('oasis', {
     ipcRenderer.on('clipboard:update', handler)
     return () => ipcRenderer.removeListener('clipboard:update', handler)
   },
+
+  // ─── 런처 ───
+  launcherList: () => ipcRenderer.invoke('launcher:list'),
+  launcherAdd: (draft) => ipcRenderer.invoke('launcher:add', draft),
+  launcherUpdate: (id, patch) => ipcRenderer.invoke('launcher:update', { id, patch }),
+  launcherDelete: (id) => ipcRenderer.invoke('launcher:delete', id),
+  launcherReorder: (orderedIds) => ipcRenderer.invoke('launcher:reorder', orderedIds),
+  launcherLaunch: (id) => ipcRenderer.invoke('launcher:launch', id),
+  launcherPickFile: () => ipcRenderer.invoke('launcher:pick-file'),
+  launcherPickFolder: () => ipcRenderer.invoke('launcher:pick-folder'),
+  launcherDroppedPaths: (paths) => ipcRenderer.invoke('launcher:dropped-paths', paths),
+  onLauncherUpdate: (cb) => {
+    const handler = (_e, list) => cb(list)
+    ipcRenderer.on('launcher:update', handler)
+    return () => ipcRenderer.removeListener('launcher:update', handler)
+  },
 })
