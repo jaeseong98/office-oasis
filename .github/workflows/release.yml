@@ -5,14 +5,38 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch: # 수동 실행도 허용
+  workflow_dispatch:
 
 permissions:
-  contents: write # GitHub Releases 에 업로드하기 위해 필요
+  contents: write
 
 jobs:
-  release:
-    name: Build & publish (${{ matrix.os }})
+  # 1단계: 비어있는 GitHub Release를 미리 만든다.
+  # 매트릭스 빌드들이 동시에 Release를 create 하려 하면 경쟁 조건이 발생하므로
+  # 한 곳에서만 생성하고, 나머지는 업로드만 한다.
+  prepare-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create or reuse GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF##refs/tags/}"
+          if gh release view "$tag" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "Release $tag already exists, reusing."
+          else
+            gh release create "$tag" \
+              --repo "${{ github.repository }}" \
+              --title "$tag" \
+              --generate-notes
+            echo "Created release $tag."
+          fi
+
+  # 2단계: 매트릭스 빌드. 이제 Release가 이미 존재하므로 단순히 업로드만 한다.
+  build:
+    needs: prepare-release
+    name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -20,24 +44,19 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-latest]
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
 
-      - name: Build Vite bundle
-        run: npm run build
+      - run: npm run build
 
       - name: Build & publish Electron app
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS: 서명 안 함 (Apple Developer 계정 없이 진행)
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npx electron-builder --publish always
