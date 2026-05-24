@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Trash2, Users, Copy, Check, LogOut, FileText, Crown, Eye } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, Fragment } from 'react'
+import { Plus, Trash2, Users, Copy, Check, LogOut, FileText, Crown, Eye, Folder, Pencil, MoveRight } from 'lucide-react'
 import { supabase, ensureAuthSession } from './supabaseClient.js'
 
 const LOCAL_KEY = 'oasis:team-state-v1'  // { workspaceId, nickname }
@@ -245,14 +245,19 @@ function Landing({ onEnter, userId }) {
 function Workspace({ workspaceId, nickname, userId, onLeave }) {
   const [workspace, setWorkspace] = useState(null)
   const [pages, setPages] = useState([])
+  const [categories, setCategories] = useState([])
   const [members, setMembers] = useState([])
   const [activePageId, setActivePageId] = useState(null)
   const [body, setBody] = useState('')
   const [title, setTitle] = useState('')
   const [copied, setCopied] = useState(false)
   const [loadError, setLoadError] = useState(null)
+  const [pageContextMenu, setPageContextMenu] = useState(null) // { x, y, page }
   const saveTimerRef = useRef(null)
   const incomingRef = useRef(false)  // realtime로 받은 변경인지 표시
+  const activePageIdRef = useRef(null)  // 채널 핸들러 안정화용 — 페이지 전환 시 채널 재구독 방지
+
+  useEffect(() => { activePageIdRef.current = activePageId }, [activePageId])
 
   const myRole = useMemo(() => members.find(m => m.user_id === userId)?.role || 'viewer', [members, userId])
   const canEdit = myRole === 'owner' || myRole === 'editor'
@@ -261,10 +266,11 @@ function Workspace({ workspaceId, nickname, userId, onLeave }) {
   useEffect(() => {
     let cancelled = false
     async function load() {
-      const [{ data: ws, error: e1 }, { data: ps, error: e2 }, { data: ms, error: e3 }] = await Promise.all([
+      const [{ data: ws, error: e1 }, { data: ps }, { data: ms }, { data: cs }] = await Promise.all([
         supabase.from('workspaces').select('*').eq('id', workspaceId).maybeSingle(),
         supabase.from('pages').select('*').eq('workspace_id', workspaceId).order('order_idx', { ascending: true }),
         supabase.from('members').select('*').eq('workspace_id', workspaceId).order('joined_at', { ascending: true }),
+        supabase.from('categories').select('*').eq('workspace_id', workspaceId).order('order_idx', { ascending: true }),
       ])
       if (cancelled) return
       if (e1 || !ws) {
@@ -274,6 +280,7 @@ function Workspace({ workspaceId, nickname, userId, onLeave }) {
       setWorkspace(ws)
       setPages(ps || [])
       setMembers(ms || [])
+      setCategories(cs || [])
       if (ps && ps[0]) {
         setActivePageId(ps[0].id)
         setBody(ps[0].body || '')
@@ -284,7 +291,7 @@ function Workspace({ workspaceId, nickname, userId, onLeave }) {
     return () => { cancelled = true }
   }, [workspaceId])
 
-  /* 실시간 구독 */
+  /* 실시간 구독 — activePageId 를 deps 에 안 넣음 (ref 사용) */
   useEffect(() => {
     const ch = supabase
       .channel(`ws-${workspaceId}`)
@@ -292,16 +299,20 @@ function Workspace({ workspaceId, nickname, userId, onLeave }) {
         if (payload.eventType === 'INSERT') {
           setPages(prev => [...prev.filter(p => p.id !== payload.new.id), payload.new])
         } else if (payload.eventType === 'UPDATE') {
+          // 자신의 활성 페이지 self-echo 는 이미 로컬 반영되어 있으므로 스킵
+          if (payload.new.updated_by === userId && payload.new.id === activePageIdRef.current) {
+            return
+          }
           setPages(prev => prev.map(p => p.id === payload.new.id ? payload.new : p))
-          if (payload.new.id === activePageId && payload.new.updated_by !== userId) {
-            // 다른 사람이 같은 페이지를 편집한 경우 — 본인 편집 중이 아니면 갱신
+          if (payload.new.id === activePageIdRef.current && payload.new.updated_by !== userId) {
+            // 다른 사람이 같은 페이지를 편집한 경우 — body/title 갱신
             incomingRef.current = true
             setBody(payload.new.body || '')
             setTitle(payload.new.title || '')
           }
         } else if (payload.eventType === 'DELETE') {
           setPages(prev => prev.filter(p => p.id !== payload.old.id))
-          if (payload.old.id === activePageId) setActivePageId(null)
+          if (payload.old.id === activePageIdRef.current) setActivePageId(null)
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'members', filter: `workspace_id=eq.${workspaceId}` }, (payload) => {
@@ -313,9 +324,18 @@ function Workspace({ workspaceId, nickname, userId, onLeave }) {
           setMembers(prev => prev.filter(m => m.id !== payload.old.id))
         }
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'categories', filter: `workspace_id=eq.${workspaceId}` }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setCategories(prev => [...prev.filter(c => c.id !== payload.new.id), payload.new].sort((a, b) => a.order_idx - b.order_idx))
+        } else if (payload.eventType === 'UPDATE') {
+          setCategories(prev => prev.map(c => c.id === payload.new.id ? payload.new : c).sort((a, b) => a.order_idx - b.order_idx))
+        } else if (payload.eventType === 'DELETE') {
+          setCategories(prev => prev.filter(c => c.id !== payload.old.id))
+        }
+      })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
-  }, [workspaceId, activePageId, userId])
+  }, [workspaceId, userId])
 
   /* 활성 페이지 바뀔 때 body/title 동기화 */
   useEffect(() => {
@@ -347,20 +367,26 @@ function Workspace({ workspaceId, nickname, userId, onLeave }) {
         .from('pages')
         .update({ ...patch, updated_at: new Date().toISOString(), updated_by: userId, updated_by_nickname: nickname })
         .eq('id', activePageId)
-    }, 500)
+    }, 800)
   }
 
-  async function createPage() {
+  async function createPage(categoryId = null) {
     if (!canEdit) return
-    const order_idx = (pages[pages.length - 1]?.order_idx ?? 0) + 10
+    const order_idx = (pages.filter(p => p.category_id === categoryId).slice(-1)[0]?.order_idx ?? 0) + 10
     const { data, error } = await supabase
       .from('pages')
-      .insert({ workspace_id: workspaceId, title: '제목 없음', body: '', order_idx, updated_by: userId, updated_by_nickname: nickname })
+      .insert({
+        workspace_id: workspaceId,
+        category_id: categoryId,
+        title: '제목 없음',
+        body: '',
+        order_idx,
+        updated_by: userId,
+        updated_by_nickname: nickname,
+      })
       .select()
       .single()
-    if (!error && data) {
-      setActivePageId(data.id)
-    }
+    if (!error && data) setActivePageId(data.id)
   }
 
   async function deletePage(id) {
@@ -372,6 +398,62 @@ function Workspace({ workspaceId, nickname, userId, onLeave }) {
       setActivePageId(remaining[0]?.id ?? null)
     }
   }
+
+  async function movePageToCategory(pageId, categoryId) {
+    if (!canEdit) return
+    setPageContextMenu(null)
+    await supabase.from('pages').update({ category_id: categoryId }).eq('id', pageId)
+  }
+
+  async function createCategory() {
+    if (!canEdit) return
+    const name = window.prompt('카테고리 이름을 입력하세요\n(예: AI파트, 백엔드파트, 공용, 기타)')
+    if (!name?.trim()) return
+    const order_idx = (categories[categories.length - 1]?.order_idx ?? 0) + 10
+    await supabase.from('categories').insert({ workspace_id: workspaceId, name: name.trim(), order_idx })
+  }
+
+  async function renameCategory(cat) {
+    if (!canEdit) return
+    const name = window.prompt('새 이름', cat.name)
+    if (!name?.trim() || name.trim() === cat.name) return
+    await supabase.from('categories').update({ name: name.trim() }).eq('id', cat.id)
+  }
+
+  async function deleteCategory(cat) {
+    if (!canEdit) return
+    const count = pages.filter(p => p.category_id === cat.id).length
+    const msg = count
+      ? `카테고리 "${cat.name}" 을(를) 삭제할까요?\n안의 페이지 ${count}개는 "분류 없음" 으로 이동합니다.`
+      : `카테고리 "${cat.name}" 을(를) 삭제할까요?`
+    if (!window.confirm(msg)) return
+    await supabase.from('categories').delete().eq('id', cat.id)
+  }
+
+  /* 페이지 우클릭 메뉴 닫기 */
+  useEffect(() => {
+    if (!pageContextMenu) return
+    const off = () => setPageContextMenu(null)
+    window.addEventListener('mousedown', off)
+    return () => window.removeEventListener('mousedown', off)
+  }, [pageContextMenu])
+
+  /* 카테고리별 페이지 그룹핑 */
+  const groupedPages = useMemo(() => {
+    const groups = []
+    for (const c of categories) {
+      groups.push({
+        id: c.id,
+        name: c.name,
+        pages: pages.filter(p => p.category_id === c.id),
+      })
+    }
+    const orphans = pages.filter(p => !p.category_id || !categories.find(c => c.id === p.category_id))
+    if (orphans.length > 0 || categories.length === 0) {
+      groups.push({ id: null, name: '분류 없음', pages: orphans })
+    }
+    return groups
+  }, [pages, categories])
 
   function copyInviteCode() {
     if (!workspace) return
@@ -436,56 +518,150 @@ function Workspace({ workspaceId, nickname, userId, onLeave }) {
         </div>
       </header>
 
+      {/* 페이지 우클릭 컨텍스트 메뉴 */}
+      {pageContextMenu && (
+        <div
+          className="fixed z-50 bg-white border border-stone-200 shadow-lg text-sm min-w-[180px]"
+          style={{ left: pageContextMenu.x, top: pageContextMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="px-3 py-1.5 border-b border-stone-200 text-[10px] text-stone-400 uppercase tracking-wider flex items-center gap-1.5">
+            <MoveRight className="w-3 h-3" /> 카테고리 이동
+          </div>
+          {categories.map(c => {
+            const current = pageContextMenu.page.category_id === c.id
+            return (
+              <button
+                key={c.id}
+                onClick={() => movePageToCategory(pageContextMenu.page.id, c.id)}
+                disabled={current}
+                className={`w-full text-left px-3 py-1.5 hover:bg-stone-100 flex items-center gap-2 ${current ? 'text-stone-400' : ''}`}
+              >
+                <Folder className="w-3 h-3" /> {c.name} {current && <span className="text-[10px] ml-auto">현재</span>}
+              </button>
+            )
+          })}
+          <button
+            onClick={() => movePageToCategory(pageContextMenu.page.id, null)}
+            disabled={!pageContextMenu.page.category_id}
+            className={`w-full text-left px-3 py-1.5 hover:bg-stone-100 flex items-center gap-2 border-t border-stone-100 ${!pageContextMenu.page.category_id ? 'text-stone-400' : ''}`}
+          >
+            <Folder className="w-3 h-3" /> 분류 없음 {!pageContextMenu.page.category_id && <span className="text-[10px] ml-auto">현재</span>}
+          </button>
+          <div className="border-t border-stone-200" />
+          <button
+            onClick={() => { const p = pageContextMenu.page; setPageContextMenu(null); deletePage(p.id) }}
+            className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-700"
+          >
+            페이지 삭제
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 flex overflow-hidden">
         {/* 페이지 사이드바 */}
-        <aside className="w-56 border-r border-stone-200 bg-white flex flex-col shrink-0">
+        <aside className="w-60 border-r border-stone-200 bg-white flex flex-col shrink-0">
           <div className="p-2 border-b border-stone-200 flex items-center justify-between">
-            <p className="text-[10px] text-stone-500 uppercase tracking-wider px-2">페이지</p>
+            <p className="text-[10px] text-stone-500 uppercase tracking-wider px-2">카테고리 · 페이지</p>
             {canEdit && (
               <button
-                onClick={createPage}
-                className="p-1 text-stone-500 hover:text-stone-900 hover:bg-stone-100"
-                title="새 페이지"
+                onClick={createCategory}
+                className="text-[10px] text-stone-500 hover:text-stone-900 px-1.5 py-0.5 hover:bg-stone-100 flex items-center gap-1"
+                title="새 카테고리"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Folder className="w-3 h-3" /> +
               </button>
             )}
           </div>
-          <ul className="flex-1 overflow-auto thin-scroll">
-            {pages.length === 0 && (
-              <li className="text-center text-xs text-stone-400 py-8 px-3">
-                {canEdit ? '새 페이지를 만들어 보세요' : '페이지 없음'}
-              </li>
-            )}
-            {pages.map((p) => {
-              const isActive = p.id === activePageId
-              const titleDisplay = (p.title || '제목 없음').trim() || '제목 없음'
-              return (
-                <li
-                  key={p.id}
-                  className={`group px-3 py-2 cursor-pointer border-b border-stone-100 ${isActive ? 'bg-stone-100' : 'hover:bg-stone-50'}`}
-                  onClick={() => setActivePageId(p.id)}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm truncate text-stone-900">{titleDisplay}</p>
-                      <p className="text-[10px] text-stone-400 mt-0.5">
-                        {p.updated_by_nickname || '—'} · {relativeTime(p.updated_at)}
-                      </p>
+          <div className="flex-1 overflow-auto thin-scroll">
+            {groupedPages.length === 0 ? (
+              <p className="text-center text-xs text-stone-400 py-8 px-3">
+                {canEdit ? '카테고리를 먼저 만들어 보세요' : '아직 비어 있음'}
+              </p>
+            ) : (
+              groupedPages.map((g) => (
+                <div key={g.id || 'none'} className="group/cat border-b border-stone-100">
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-stone-50">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <Folder className="w-3 h-3 text-stone-400 shrink-0" />
+                      <span className="text-[11px] font-semibold text-stone-700 truncate uppercase tracking-wider">
+                        {g.name}
+                      </span>
+                      <span className="text-[10px] text-stone-400 tnum">{g.pages.length}</span>
                     </div>
-                    {canEdit && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deletePage(p.id) }}
-                        className="opacity-0 group-hover:opacity-100 text-stone-400 hover:text-rose-600"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    )}
+                    <div className="flex items-center opacity-0 group-hover/cat:opacity-100">
+                      {canEdit && g.id && (
+                        <>
+                          <button
+                            onClick={() => renameCategory({ id: g.id, name: g.name })}
+                            className="p-0.5 text-stone-400 hover:text-stone-900"
+                            title="이름 변경"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => deleteCategory({ id: g.id, name: g.name })}
+                            className="p-0.5 text-stone-400 hover:text-rose-600"
+                            title="카테고리 삭제"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </>
+                      )}
+                      {canEdit && (
+                        <button
+                          onClick={() => createPage(g.id)}
+                          className="p-0.5 text-stone-400 hover:text-stone-900"
+                          title="이 카테고리에 새 페이지"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </li>
-              )
-            })}
-          </ul>
+                  <ul>
+                    {g.pages.length === 0 ? (
+                      <li className="text-[11px] text-stone-400 italic px-3 py-1.5 pl-7">페이지 없음</li>
+                    ) : (
+                      g.pages.map((p) => {
+                        const isActive = p.id === activePageId
+                        const titleDisplay = (p.title || '제목 없음').trim() || '제목 없음'
+                        return (
+                          <li
+                            key={p.id}
+                            className={`group/pg px-3 py-1.5 pl-7 cursor-pointer ${isActive ? 'bg-stone-100' : 'hover:bg-stone-50'}`}
+                            onClick={() => setActivePageId(p.id)}
+                            onContextMenu={(e) => {
+                              if (!canEdit) return
+                              e.preventDefault()
+                              setPageContextMenu({ x: e.clientX, y: e.clientY, page: p })
+                            }}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm truncate text-stone-900">{titleDisplay}</p>
+                                <p className="text-[10px] text-stone-400 mt-0.5">
+                                  {p.updated_by_nickname || '—'} · {relativeTime(p.updated_at)}
+                                </p>
+                              </div>
+                              {canEdit && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); deletePage(p.id) }}
+                                  className="opacity-0 group-hover/pg:opacity-100 text-stone-400 hover:text-rose-600"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </li>
+                        )
+                      })
+                    )}
+                  </ul>
+                </div>
+              ))
+            )}
+          </div>
           {/* 멤버 목록 */}
           <div className="border-t border-stone-200 p-2">
             <p className="text-[10px] text-stone-500 uppercase tracking-wider px-2 mb-1.5">멤버 ({members.length})</p>

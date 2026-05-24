@@ -27,9 +27,19 @@ create table if not exists public.members (
 create index if not exists members_workspace_idx on public.members (workspace_id);
 create index if not exists members_user_idx on public.members (user_id);
 
+create table if not exists public.categories (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces(id) on delete cascade,
+  name text not null,
+  order_idx int not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists categories_workspace_idx on public.categories (workspace_id);
+
 create table if not exists public.pages (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
+  category_id uuid references public.categories(id) on delete set null,
   title text not null default '제목 없음',
   body text not null default '',
   order_idx int not null default 0,
@@ -38,12 +48,17 @@ create table if not exists public.pages (
   updated_by_nickname text
 );
 create index if not exists pages_workspace_idx on public.pages (workspace_id);
+create index if not exists pages_category_idx on public.pages (category_id);
+
+-- 기존 테이블에 category_id 컬럼이 없으면 추가 (마이그레이션 안전성)
+alter table public.pages add column if not exists category_id uuid references public.categories(id) on delete set null;
 
 /* ───────── RLS HELPERS ───────── */
 
 alter table public.workspaces enable row level security;
 alter table public.members    enable row level security;
 alter table public.pages      enable row level security;
+alter table public.categories enable row level security;
 
 create or replace function public.is_member(ws_id uuid)
 returns boolean
@@ -129,6 +144,23 @@ drop policy if exists "pages_delete_editor" on public.pages;
 create policy "pages_delete_editor" on public.pages
   for delete using (public.member_role(workspace_id) in ('owner', 'editor'));
 
+-- categories
+drop policy if exists "categories_select" on public.categories;
+create policy "categories_select" on public.categories
+  for select using (public.is_member(workspace_id));
+
+drop policy if exists "categories_insert_editor" on public.categories;
+create policy "categories_insert_editor" on public.categories
+  for insert with check (public.member_role(workspace_id) in ('owner', 'editor'));
+
+drop policy if exists "categories_update_editor" on public.categories;
+create policy "categories_update_editor" on public.categories
+  for update using (public.member_role(workspace_id) in ('owner', 'editor'));
+
+drop policy if exists "categories_delete_editor" on public.categories;
+create policy "categories_delete_editor" on public.categories
+  for delete using (public.member_role(workspace_id) in ('owner', 'editor'));
+
 /* ───────── RPC: 워크스페이스 생성 ───────── */
 
 create or replace function public.create_workspace(
@@ -149,13 +181,14 @@ begin
   end if;
 
   -- 고유 코드 생성 (충돌 시 재시도)
+  -- NOTE: 테이블 alias 'w' 로 명시 — 함수의 OUT 파라미터 invite_code 와 모호성 회피
   loop
     v_attempt := v_attempt + 1;
     v_code := upper(
       substring(md5(random()::text || clock_timestamp()::text || v_attempt::text), 1, 4) || '-' ||
       substring(md5(random()::text || clock_timestamp()::text || v_attempt::text), 5, 4)
     );
-    exit when not exists(select 1 from public.workspaces where invite_code = v_code) or v_attempt > 5;
+    exit when not exists(select 1 from public.workspaces w where w.invite_code = v_code) or v_attempt > 5;
   end loop;
 
   insert into public.workspaces (name, invite_code, created_by)
@@ -207,6 +240,11 @@ grant execute on function public.join_workspace_by_code to authenticated, anon;
 
 /* ───────── REALTIME ───────── */
 
-alter publication supabase_realtime add table public.workspaces;
-alter publication supabase_realtime add table public.pages;
-alter publication supabase_realtime add table public.members;
+-- 이미 등록되었을 수 있으니 안전하게: 에러 무시
+do $$
+begin
+  begin alter publication supabase_realtime add table public.workspaces; exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.pages;      exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.members;    exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.categories; exception when duplicate_object then null; end;
+end $$;
