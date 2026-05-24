@@ -1,7 +1,7 @@
 {
   "name": "office-oasis",
   "private": true,
-  "version": "0.6.1",
+  "version": "0.7.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -15,6 +15,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.106.1",
     "electron-updater": "^6.8.3",
     "lucide-react": "^1.16.0",
     "react": "^19.2.6",
@@ -60,7 +61,12 @@
     ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "artifactName": "OfficeOasis-Setup.${ext}"
     },
@@ -73,13 +79,20 @@
     },
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "category": "public.app-category.productivity",
       "artifactName": "OfficeOasis.${ext}"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Utility",
       "artifactName": "OfficeOasis.${ext}"
     }

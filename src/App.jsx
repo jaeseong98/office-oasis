@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, FolderOpen, ExternalLink, X, Plus, Sparkles, Layers, FileText, ClipboardCopy } from 'lucide-react'
+import { ChevronRight, FolderOpen, ExternalLink, X, Plus, Sparkles, Layers, FileText, ClipboardCopy, Users } from 'lucide-react'
 import LauncherApp from './Launcher.jsx'
 import NotesApp from './Notes.jsx'
+import TeamApp from './Team.jsx'
 
 const TABS = [
   { id: 'cleanup',  label: '청소',   Icon: Sparkles },
   { id: 'launcher', label: '런처',   Icon: Layers },
   { id: 'notes',    label: '노트',   Icon: FileText },
+  { id: 'team',     label: '팀',     Icon: Users },
 ]
 
 /* ───────── 유틸 ───────── */
@@ -383,6 +385,7 @@ export default function App() {
         )}
         {activeTab === 'launcher' && <LauncherApp />}
         {activeTab === 'notes' && <NotesApp />}
+        {activeTab === 'team' && <TeamApp />}
       </div>
 
       {toast && (
