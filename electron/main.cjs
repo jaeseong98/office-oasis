@@ -12,7 +12,7 @@
 //  3) trashMany IPC: shell.trashItem 으로 실제 휴지통 이동
 //  4) 진행률을 실시간으로 렌더러에 전송
 
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, dialog, Tray, Menu, globalShortcut, clipboard, screen, nativeImage } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
 const fsp = require('node:fs/promises')
@@ -20,6 +20,8 @@ const crypto = require('node:crypto')
 const { autoUpdater } = require('electron-updater')
 
 let mainWindow = null
+let clipboardWindow = null
+let tray = null
 let scanState = { running: false, cancelToken: 0 }
 
 /* ───────── 경로 / 무시 규칙 ───────── */
@@ -343,6 +345,253 @@ ipcMain.handle('shell:open', async (_e, p) => {
   return { ok: true }
 })
 
+/* ───────── 클립보드 매니저 ───────── */
+
+const CLIPBOARD_MAX_ENTRIES = 200
+const CLIPBOARD_POLL_MS = 700
+const CLIPBOARD_MAX_TEXT_LEN = 10 * 1024 * 1024 // 10MB
+
+let clipboardHistory = []       // [{ id, type, text, timestamp, pinned }]
+let lastClipboardText = ''
+let clipboardPaused = false
+let clipboardTimer = null
+
+function clipboardFilePath() {
+  return path.join(app.getPath('userData'), 'clipboard-history.json')
+}
+
+function loadClipboardHistory() {
+  try {
+    const raw = fs.readFileSync(clipboardFilePath(), 'utf8')
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) clipboardHistory = parsed
+  } catch { clipboardHistory = [] }
+}
+
+function saveClipboardHistory() {
+  try {
+    fs.writeFileSync(clipboardFilePath(), JSON.stringify(clipboardHistory))
+  } catch (err) {
+    console.error('[oasis] save clipboard history failed:', err)
+  }
+}
+
+function broadcastClipboard() {
+  if (clipboardWindow && !clipboardWindow.isDestroyed()) {
+    clipboardWindow.webContents.send('clipboard:update', clipboardHistory)
+  }
+}
+
+function startClipboardPolling() {
+  try { lastClipboardText = clipboard.readText() } catch { lastClipboardText = '' }
+  clipboardTimer = setInterval(() => {
+    if (clipboardPaused) return
+    let text
+    try { text = clipboard.readText() } catch { return }
+    if (!text || text === lastClipboardText) return
+    if (text.length > CLIPBOARD_MAX_TEXT_LEN) return
+    lastClipboardText = text
+
+    // 중복 제거 — 같은 텍스트 기존 항목은 제거 후 맨 위로
+    clipboardHistory = clipboardHistory.filter(e => e.text !== text)
+    clipboardHistory.unshift({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: 'text',
+      text,
+      timestamp: Date.now(),
+    })
+    // 최대 개수 유지 — 핀된 건 보존
+    if (clipboardHistory.length > CLIPBOARD_MAX_ENTRIES) {
+      const pinned = clipboardHistory.filter(e => e.pinned)
+      const rest = clipboardHistory.filter(e => !e.pinned)
+      clipboardHistory = [...pinned, ...rest].slice(0, CLIPBOARD_MAX_ENTRIES)
+    }
+    saveClipboardHistory()
+    broadcastClipboard()
+  }, CLIPBOARD_POLL_MS)
+}
+
+/* ───────── 클립보드 팝업 창 ───────── */
+
+function createClipboardWindow() {
+  clipboardWindow = new BrowserWindow({
+    width: 480,
+    height: 540,
+    frame: false,
+    resizable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    show: false,
+    backgroundColor: '#fafaf9',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+
+  const devUrl = process.env.VITE_DEV_SERVER_URL
+  if (devUrl) {
+    clipboardWindow.loadURL(`${devUrl}?window=clipboard`)
+  } else {
+    clipboardWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), {
+      query: { window: 'clipboard' },
+    })
+  }
+
+  clipboardWindow.on('blur', () => {
+    if (!clipboardWindow.isDestroyed() && !clipboardWindow.webContents.isDevToolsOpened()) {
+      clipboardWindow.hide()
+    }
+  })
+
+  clipboardWindow.on('closed', () => { clipboardWindow = null })
+}
+
+function showClipboardNearCursor() {
+  if (!clipboardWindow || clipboardWindow.isDestroyed()) createClipboardWindow()
+  const cursor = screen.getCursorScreenPoint()
+  const display = screen.getDisplayNearestPoint(cursor)
+  const W = 480, H = 540
+  const x = Math.min(
+    Math.max(cursor.x - 100, display.workArea.x + 8),
+    display.workArea.x + display.workArea.width - W - 8,
+  )
+  const y = Math.min(
+    Math.max(cursor.y, display.workArea.y + 8),
+    display.workArea.y + display.workArea.height - H - 8,
+  )
+  clipboardWindow.setPosition(x, y)
+  clipboardWindow.show()
+  clipboardWindow.focus()
+  clipboardWindow.webContents.send('clipboard:update', clipboardHistory)
+}
+
+function toggleClipboardWindow() {
+  if (clipboardWindow && !clipboardWindow.isDestroyed() && clipboardWindow.isVisible()) {
+    clipboardWindow.hide()
+  } else {
+    showClipboardNearCursor()
+  }
+}
+
+/* ───────── 클립보드 IPC ───────── */
+
+ipcMain.handle('clipboard:list', () => clipboardHistory)
+
+ipcMain.handle('clipboard:paste', (_e, id) => {
+  const entry = clipboardHistory.find(e => e.id === id)
+  if (!entry) return { ok: false }
+  clipboard.writeText(entry.text)
+  lastClipboardText = entry.text // 폴러가 새 항목으로 추가하지 않도록
+  // 최근 사용된 것은 위로
+  clipboardHistory = [entry, ...clipboardHistory.filter(e => e.id !== id)]
+  saveClipboardHistory()
+  if (clipboardWindow && !clipboardWindow.isDestroyed()) clipboardWindow.hide()
+  return { ok: true }
+})
+
+ipcMain.handle('clipboard:delete', (_e, id) => {
+  clipboardHistory = clipboardHistory.filter(e => e.id !== id)
+  saveClipboardHistory()
+  broadcastClipboard()
+  return { ok: true }
+})
+
+ipcMain.handle('clipboard:pin', (_e, id) => {
+  const e = clipboardHistory.find(x => x.id === id)
+  if (!e) return { ok: false }
+  e.pinned = !e.pinned
+  clipboardHistory.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0))
+  saveClipboardHistory()
+  broadcastClipboard()
+  return { ok: true }
+})
+
+ipcMain.handle('clipboard:clear', () => {
+  clipboardHistory = clipboardHistory.filter(e => e.pinned)
+  saveClipboardHistory()
+  broadcastClipboard()
+  return { ok: true }
+})
+
+ipcMain.handle('clipboard:hide', () => {
+  if (clipboardWindow && !clipboardWindow.isDestroyed()) clipboardWindow.hide()
+  return { ok: true }
+})
+
+ipcMain.handle('clipboard:set-paused', (_e, paused) => {
+  clipboardPaused = !!paused
+  rebuildTrayMenu()
+  return { paused: clipboardPaused }
+})
+
+/* ───────── 트레이 ───────── */
+
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
+    {
+      label: '청소하기 열기',
+      click: () => {
+        if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+        mainWindow.show()
+        mainWindow.focus()
+      },
+    },
+    {
+      label: '클립보드 (Ctrl+Shift+V)',
+      click: () => showClipboardNearCursor(),
+    },
+    { type: 'separator' },
+    {
+      label: clipboardPaused ? '클립보드 기록 재개' : '클립보드 기록 일시 정지',
+      click: () => {
+        clipboardPaused = !clipboardPaused
+        rebuildTrayMenu()
+      },
+    },
+    {
+      label: '클립보드 비우기 (핀 제외)',
+      click: () => {
+        clipboardHistory = clipboardHistory.filter(e => e.pinned)
+        saveClipboardHistory()
+        broadcastClipboard()
+      },
+    },
+    { type: 'separator' },
+    {
+      label: '종료',
+      click: () => { app.isQuitting = true; app.quit() },
+    },
+  ])
+}
+
+function rebuildTrayMenu() {
+  if (tray && !tray.isDestroyed()) tray.setContextMenu(buildTrayMenu())
+}
+
+function createTray() {
+  const iconPath = path.join(__dirname, 'assets', 'tray.png')
+  let icon
+  try {
+    icon = nativeImage.createFromPath(iconPath)
+  } catch {
+    icon = nativeImage.createEmpty()
+  }
+  tray = new Tray(icon)
+  tray.setToolTip('Office Oasis')
+  tray.setContextMenu(buildTrayMenu())
+  tray.on('click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createWindow()
+      return
+    }
+    if (mainWindow.isVisible()) mainWindow.hide()
+    else { mainWindow.show(); mainWindow.focus() }
+  })
+}
+
 /* ───────── 윈도우 부트스트랩 ───────── */
 
 function createWindow() {
@@ -370,6 +619,13 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
 
+  // 트레이가 있으면 닫기 = 숨기기 (백그라운드 유지)
+  mainWindow.on('close', (e) => {
+    if (!app.isQuitting && tray && !tray.isDestroyed()) {
+      e.preventDefault()
+      mainWindow.hide()
+    }
+  })
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
@@ -421,13 +677,30 @@ function setupAutoUpdater() {
 }
 
 app.whenReady().then(() => {
+  loadClipboardHistory()
+  startClipboardPolling()
+  createTray()
   createWindow()
   setupAutoUpdater()
+
+  // 전역 단축키
+  const accelerator = 'CommandOrControl+Shift+V'
+  const ok = globalShortcut.register(accelerator, () => toggleClipboardWindow())
+  if (!ok) console.error('[oasis] failed to register global shortcut', accelerator)
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
+// 트레이가 있으니 모든 창이 닫혀도 종료하지 않음
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  // no-op: tray가 살아있는 한 프로세스 유지
+})
+
+app.on('before-quit', () => {
+  app.isQuitting = true
+  if (clipboardTimer) clearInterval(clipboardTimer)
+  globalShortcut.unregisterAll()
+  if (tray && !tray.isDestroyed()) tray.destroy()
 })
