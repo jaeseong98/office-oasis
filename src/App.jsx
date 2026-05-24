@@ -43,6 +43,7 @@ export default function App() {
   const [selected, setSelected] = useState(() => new Set())
   const [activeCat, setActiveCat] = useState(null)
   const [toast, setToast] = useState(null)
+  const [confirming, setConfirming] = useState(null) // { paths, permanent }
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.oasis?.isElectron) return
@@ -197,15 +198,20 @@ export default function App() {
     setSelected(next)
   }
 
-  async function trashSelected() {
+  function askConfirmation() {
     if (selectedStats.count === 0) return
-    const paths = Array.from(selected)
+    setConfirming({ paths: Array.from(selected), permanent: false })
+  }
+
+  async function executeDeletion({ paths, permanent }) {
+    setConfirming(null)
     const sizeMap = {}
     for (const c of CATS) {
       for (const it of groupedItems[c.id] || []) sizeMap[it.path] = it.size || 0
     }
     setToast(null)
-    const { results } = await window.oasis.trashMany(paths)
+    const api = permanent ? window.oasis.permanentMany : window.oasis.trashMany
+    const { results } = await api(paths)
     const okPaths = results.filter(r => r.ok).map(r => r.path)
     const failed = results.filter(r => !r.ok)
     if (okPaths.length) {
@@ -232,7 +238,8 @@ export default function App() {
       })
     }
     const recovered = okPaths.reduce((s, p) => s + (sizeMap[p] || 0), 0)
-    if (failed.length === 0) showToast(`${okPaths.length}개 휴지통으로 · ${formatBytes(recovered)} 회수`, 'ok')
+    const verb = permanent ? '영구 삭제' : '휴지통으로'
+    if (failed.length === 0) showToast(`${okPaths.length}개 ${verb} · ${formatBytes(recovered)} 회수`, 'ok')
     else showToast(`완료 ${okPaths.length} · 실패 ${failed.length}`, failed.length > okPaths.length ? 'error' : 'info')
   }
 
@@ -310,9 +317,9 @@ export default function App() {
               className="text-xs text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline">
               선택 해제
             </button>
-            <button onClick={trashSelected}
+            <button onClick={askConfirmation}
               className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white text-sm">
-              휴지통으로 보내기
+              삭제…
             </button>
           </div>
         </div>
@@ -326,6 +333,71 @@ export default function App() {
           {toast.msg}
         </div>
       )}
+
+      {confirming && (
+        <ConfirmDeleteModal
+          state={confirming}
+          onChange={setConfirming}
+          onCancel={() => setConfirming(null)}
+          onConfirm={executeDeletion}
+          totalSize={selectedStats.size}
+          totalCount={selectedStats.count}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ───────── 삭제 확인 모달 ───────── */
+
+function ConfirmDeleteModal({ state, onChange, onCancel, onConfirm, totalSize, totalCount }) {
+  const isPermanent = state.permanent
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center" onMouseDown={onCancel}>
+      <div className="bg-white border border-stone-200 shadow-xl max-w-md w-full mx-4"
+           onMouseDown={(e) => e.stopPropagation()}>
+        <div className="px-6 pt-6 pb-3">
+          <p className="eyebrow">{isPermanent ? '⚠ 영구 삭제' : '휴지통으로 이동'}</p>
+          <h3 className="text-lg font-semibold mt-1.5 tracking-tight">
+            {totalCount}개 항목 · {formatBytes(totalSize)}
+          </h3>
+          <p className="text-sm text-stone-600 mt-3 leading-relaxed">
+            {isPermanent ? (
+              <>이 항목들은 <strong className="text-stone-900">즉시 영구 삭제</strong>됩니다.<br />
+              휴지통을 거치지 않으며 <strong className="text-stone-900">복원할 수 없습니다.</strong></>
+            ) : (
+              <>이 항목들은 휴지통으로 이동합니다.<br />
+              실수했다면 휴지통에서 바로 복원할 수 있습니다.</>
+            )}
+          </p>
+        </div>
+
+        <div className="px-6 py-4 border-t border-stone-200 bg-stone-50">
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isPermanent}
+              onChange={(e) => onChange({ ...state, permanent: e.target.checked })}
+              className="accent-stone-900 w-4 h-4 mt-0.5 cursor-pointer"
+            />
+            <div>
+              <p className="text-sm font-medium">휴지통 우회 · 영구 삭제</p>
+              <p className="text-xs text-stone-500 mt-0.5">디스크 용량을 즉시 회수. 복원 불가.</p>
+            </div>
+          </label>
+        </div>
+
+        <div className="px-6 py-4 flex items-center justify-end gap-3 border-t border-stone-200">
+          <button onClick={onCancel}
+            className="text-sm text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline">
+            취소
+          </button>
+          <button onClick={() => onConfirm(state)}
+            className={`px-4 py-2 text-sm font-medium text-white ${isPermanent ? 'bg-red-700 hover:bg-red-800' : 'bg-stone-900 hover:bg-stone-800'}`}>
+            {isPermanent ? '영구 삭제' : '휴지통으로'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

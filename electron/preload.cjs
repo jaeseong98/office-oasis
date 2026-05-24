@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('oasis', {
 
   // 실제 청소
   trashMany: (paths) => ipcRenderer.invoke('trash:many', paths),
+  permanentMany: (paths) => ipcRenderer.invoke('permanent:many', paths),
 
   // 셸 연동
   reveal: (p) => ipcRenderer.invoke('shell:reveal', p),

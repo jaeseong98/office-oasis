@@ -312,6 +312,26 @@ ipcMain.handle('trash:many', async (_e, paths) => {
   return { results }
 })
 
+// 영구 삭제 (복원 불가) — fs.rm 으로 휴지통 우회
+ipcMain.handle('permanent:many', async (_e, paths) => {
+  if (!Array.isArray(paths)) return { results: [] }
+  const results = []
+  for (const p of paths) {
+    if (typeof p !== 'string') {
+      results.push({ path: p, ok: false, error: 'invalid' })
+      continue
+    }
+    try {
+      // recursive: true 로 디렉터리도 처리, force: true 로 없는 경로 무시
+      await fsp.rm(p, { recursive: true, force: true })
+      results.push({ path: p, ok: true })
+    } catch (err) {
+      results.push({ path: p, ok: false, error: err.message || String(err) })
+    }
+  }
+  return { results }
+})
+
 ipcMain.handle('shell:reveal', async (_e, p) => {
   if (typeof p === 'string') shell.showItemInFolder(p)
   return { ok: true }
