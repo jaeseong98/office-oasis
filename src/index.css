@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  font-family: system-ui, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", Roboto, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01", "ss03";
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -14,17 +15,21 @@ html, body, #root {
   padding: 0;
   height: 100%;
   overflow: hidden;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: #fafaf9; /* stone-50 */
+  color: #1c1917;      /* stone-900 */
 }
 
-/* 캔버스 영역 안에서 텍스트 선택을 막아 던지기 인터랙션 방해를 줄임 */
-.no-select {
-  user-select: none;
-  -webkit-user-select: none;
+.tnum { font-variant-numeric: tabular-nums; }
+
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #78716c; /* stone-500 */
+  font-weight: 500;
 }
 
-/* 스크롤바 살짝 다듬기 (엑셀 뷰에서만 보임) */
-.thin-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
-.thin-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.thin-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.thin-scroll::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 0; }
+.thin-scroll::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
 .thin-scroll::-webkit-scrollbar-track { background: transparent; }

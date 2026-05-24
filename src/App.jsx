@@ -1,434 +1,603 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import Matter from 'matter-js'
-import { Sparkles, ListChecks, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronRight, FolderOpen, ExternalLink, X, Plus } from 'lucide-react'
 
-const ZONES = [
-  { id: 'urgent',  emoji: '🔥', label: '당장 할 일',   color: '#ef4444', accent: '#fecaca' },
-  { id: 'pending', emoji: '🥶', label: '컨펌 대기',     color: '#3b82f6', accent: '#bfdbfe' },
-  { id: 'trash',   emoji: '🗑️', label: '퇴사시 삭제', color: '#64748b', accent: '#cbd5e1' },
-]
-
-const STORAGE_KEY = 'office-oasis:files-v1'
-const MAX_CAPACITY_BYTES = 500 * 1024 * 1024 // 500MB 시각화 상한
-
-function loadFromStorage() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch { return [] }
-}
-function saveToStorage(files) {
-  try {
-    // sessionUrl(blob URL)은 새로고침 후 무효이므로 저장 제외
-    const stripped = files.map(({ sessionUrl, ...rest }) => rest)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stripped))
-  } catch { /* ignore quota */ }
-}
+/* ───────── 유틸 ───────── */
 
 function formatBytes(n) {
-  if (!n && n !== 0) return '-'
-  if (n < 1024) return `${n}B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)}MB`
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)}GB`
+  if (n == null) return '—'
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
-function pickZoneByX(x, width) {
-  if (x < width / 3) return 'urgent'
-  if (x < (width / 3) * 2) return 'pending'
-  return 'trash'
+function shortPath(p, maxLen = 60) {
+  if (!p) return ''
+  if (p.length <= maxLen) return p
+  return '…' + p.slice(p.length - maxLen + 1)
 }
+
+function ageDays(mtimeMs) {
+  return Math.floor((Date.now() - mtimeMs) / (1000 * 60 * 60 * 24))
+}
+
+/* ───────── 카테고리 ───────── */
+
+const CATS = [
+  { id: 'huge',        label: '거대 파일',      hint: '50MB 이상' },
+  { id: 'old',         label: '오래 묵은 파일', hint: '마지막 수정 90일+' },
+  { id: 'screenshots', label: '스크린샷',       hint: '캡처 파일 패턴' },
+  { id: 'temp',        label: '임시·잔해',      hint: '.tmp / .crdownload 등' },
+  { id: 'duplicates',  label: '중복 파일',      hint: '해시 동일 그룹' },
+  { id: 'emptyDirs',   label: '빈 폴더',        hint: '내용 없음' },
+]
+
+/* ───────── 메인 ───────── */
 
 export default function App() {
-  const sceneRef = useRef(null)
-  const engineRef = useRef(null)
-  const renderRef = useRef(null)
-  const runnerRef = useRef(null)
-  const bodyMapRef = useRef(new Map()) // body.id -> file metadata
+  const [isElectron, setIsElectron] = useState(false)
+  const [roots, setRoots] = useState([])
+  const [progress, setProgress] = useState(null)
+  const [scanResult, setScanResult] = useState(null)
+  const [scanning, setScanning] = useState(false)
+  const [selected, setSelected] = useState(() => new Set())
+  const [activeCat, setActiveCat] = useState(null)
+  const [toast, setToast] = useState(null)
 
-  const [files, setFiles] = useState(() => loadFromStorage())
-  const [panicMode, setPanicMode] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
-
-  // 파일 메타가 바뀔 때마다 LocalStorage 동기화
-  useEffect(() => { saveToStorage(files) }, [files])
-
-  // 윈도우 전역 드롭 차단 (캔버스 밖에 떨어뜨려도 브라우저가 파일 열지 않게)
   useEffect(() => {
-    const prevent = (e) => e.preventDefault()
-    window.addEventListener('dragover', prevent)
-    window.addEventListener('drop', prevent)
-    return () => {
-      window.removeEventListener('dragover', prevent)
-      window.removeEventListener('drop', prevent)
-    }
+    if (typeof window === 'undefined' || !window.oasis?.isElectron) return
+    setIsElectron(true)
+    window.oasis.defaultRoots().then(setRoots)
+    const off = window.oasis.onProgress(setProgress)
+    return off
   }, [])
 
-  // Space = 상사 감지 모드 토글, Esc = 해제
   useEffect(() => {
-    const handler = (e) => {
-      const tag = e.target?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return
-      if (e.code === 'Space') {
-        e.preventDefault()
-        setPanicMode(p => !p)
-      } else if (e.key === 'Escape') {
-        setPanicMode(false)
-      }
-    }
+    const handler = (e) => { if (e.key === 'Escape') setActiveCat(null) }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  // 파일 메타로부터 물리 바디 생성
-  function createFileBody(meta, canvasW, dropX) {
-    const zone = ZONES.find(z => z.id === meta.zone) ?? ZONES[1]
-    const sizeFactor = Math.min(1, (meta.size || 0) / (50 * 1024 * 1024))
-    const w = 92 + sizeFactor * 70
-    const h = 36 + sizeFactor * 18
-    const zoneW = canvasW / 3
-    const zoneIdx = ZONES.findIndex(z => z.id === meta.zone)
-    const fallbackX = zoneIdx * zoneW + zoneW / 2 + (Math.random() - 0.5) * (zoneW * 0.4)
-    const x = typeof dropX === 'number' ? dropX : fallbackX
-    return Matter.Bodies.rectangle(x, 40, w, h, {
-      restitution: 0.42,
-      friction: 0.45,
-      frictionAir: 0.012,
-      density: 0.0012,
-      chamfer: { radius: 8 },
-      render: {
-        fillStyle: zone.color,
-        strokeStyle: zone.accent,
-        lineWidth: 2,
-      },
-    })
+  const showToast = (msg, kind = 'info') => {
+    setToast({ msg, kind })
+    setTimeout(() => setToast(null), 2800)
   }
 
-  // Matter.js 초기화
-  useEffect(() => {
-    const container = sceneRef.current
-    if (!container) return
+  async function addRoot() {
+    const r = await window.oasis.pickFolder()
+    if (!r.canceled) setRoots(prev => Array.from(new Set([...prev, r.path])))
+  }
+  function removeRoot(p) { setRoots(prev => prev.filter(r => r !== p)) }
 
-    const width = container.clientWidth
-    const height = container.clientHeight
-
-    const engine = Matter.Engine.create({ gravity: { x: 0, y: 1.0 } })
-    const world = engine.world
-
-    const render = Matter.Render.create({
-      element: container,
-      engine,
-      options: {
-        width,
-        height,
-        background: 'transparent',
-        wireframes: false,
-        pixelRatio: window.devicePixelRatio || 1,
-      },
-    })
-
-    // 경계 (보이지 않는 정적 벽)
-    const wallStyle = { isStatic: true, render: { fillStyle: 'transparent' } }
-    const ground   = Matter.Bodies.rectangle(width / 2, height - 14, width * 2, 28, {
-      isStatic: true,
-      render: { fillStyle: '#1e293b' },
-    })
-    const leftWall  = Matter.Bodies.rectangle(-20, height / 2, 40, height * 2, wallStyle)
-    const rightWall = Matter.Bodies.rectangle(width + 20, height / 2, 40, height * 2, wallStyle)
-    const ceiling   = Matter.Bodies.rectangle(width / 2, -200, width * 2, 40, wallStyle)
-    const divider1  = Matter.Bodies.rectangle(width / 3, height - 60, 3, 100, {
-      isStatic: true,
-      render: { fillStyle: 'rgba(148,163,184,0.25)' },
-    })
-    const divider2  = Matter.Bodies.rectangle((width / 3) * 2, height - 60, 3, 100, {
-      isStatic: true,
-      render: { fillStyle: 'rgba(148,163,184,0.25)' },
-    })
-
-    Matter.World.add(world, [ground, leftWall, rightWall, ceiling, divider1, divider2])
-
-    // 마우스 드래그 (블록을 잡아서 던질 수 있게)
-    const mouse = Matter.Mouse.create(render.canvas)
-    const mouseConstraint = Matter.MouseConstraint.create(engine, {
-      mouse,
-      constraint: { stiffness: 0.18, render: { visible: false } },
-    })
-    Matter.World.add(world, mouseConstraint)
-    render.mouse = mouse
-
-    // 캔버스에 라벨/구역명을 덧그리기
-    Matter.Events.on(render, 'afterRender', () => {
-      const ctx = render.context
-      const pr = render.options.pixelRatio || 1
-      const w = render.canvas.width / pr
-      const h = render.canvas.height / pr
-
-      // 구역 타이틀
-      ctx.save()
-      ctx.textAlign = 'center'
-      ctx.font = '600 18px system-ui, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif'
-      const zoneW = w / 3
-      ZONES.forEach((z, i) => {
-        const x = zoneW * i + zoneW / 2
-        ctx.fillStyle = 'rgba(226,232,240,0.55)'
-        ctx.fillText(`${z.emoji} ${z.label}`, x, h - 52)
-      })
-      ctx.restore()
-
-      // 블록 위 파일명 + 용량
-      ctx.save()
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      Matter.Composite.allBodies(world).forEach(b => {
-        const meta = bodyMapRef.current.get(b.id)
-        if (!meta) return
-        ctx.save()
-        ctx.translate(b.position.x, b.position.y)
-        ctx.rotate(b.angle)
-        ctx.fillStyle = '#ffffff'
-        ctx.font = '600 12px system-ui, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif'
-        const name = meta.name.length > 14 ? meta.name.slice(0, 12) + '…' : meta.name
-        ctx.fillText(name, 0, -4)
-        ctx.font = '500 10px ui-monospace, Consolas, monospace'
-        ctx.fillStyle = 'rgba(255,255,255,0.75)'
-        ctx.fillText(formatBytes(meta.size), 0, 10)
-        ctx.restore()
-      })
-      ctx.restore()
-    })
-
-    Matter.Render.run(render)
-    const runner = Matter.Runner.create()
-    Matter.Runner.run(runner, engine)
-
-    engineRef.current = engine
-    renderRef.current = render
-    runnerRef.current = runner
-
-    // 새로고침 후에도 블록이 다시 나타나도록 메타로부터 복원
-    const persisted = loadFromStorage()
-    persisted.forEach((meta) => {
-      const body = createFileBody(meta, width)
-      bodyMapRef.current.set(body.id, meta)
-      Matter.World.add(world, body)
-    })
-
-    // 리사이즈: 캔버스 크기 갱신
-    const onResize = () => {
-      const w = container.clientWidth
-      const h = container.clientHeight
-      render.options.width = w
-      render.options.height = h
-      render.canvas.width = w * (render.options.pixelRatio || 1)
-      render.canvas.height = h * (render.options.pixelRatio || 1)
-      render.canvas.style.width = w + 'px'
-      render.canvas.style.height = h + 'px'
-    }
-    window.addEventListener('resize', onResize)
-
-    return () => {
-      window.removeEventListener('resize', onResize)
-      Matter.Render.stop(render)
-      Matter.Runner.stop(runner)
-      Matter.World.clear(world, false)
-      Matter.Engine.clear(engine)
-      if (render.canvas?.parentNode) render.canvas.parentNode.removeChild(render.canvas)
-      render.textures = {}
-      bodyMapRef.current.clear()
-      engineRef.current = null
-      renderRef.current = null
-      runnerRef.current = null
-    }
-  }, [])
-
-  // 드래그 앤 드롭으로 파일이 들어오면 블록 생성
-  const handleDrop = useCallback((e) => {
-    e.preventDefault()
-    setDragOver(false)
-    const container = sceneRef.current
-    if (!container || !engineRef.current) return
-    const rect = container.getBoundingClientRect()
-    const dropX = e.clientX - rect.left
-    const canvasW = rect.width
-    const baseZone = pickZoneByX(dropX, canvasW)
-
-    const filesArr = Array.from(e.dataTransfer?.files || [])
-    if (!filesArr.length) return
-
-    const newMetas = []
-    filesArr.forEach((f, idx) => {
-      const meta = {
-        id: `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 8)}`,
-        name: f.name,
-        size: f.size,
-        type: f.type || 'unknown',
-        zone: baseZone,
-        createdAt: Date.now(),
-        sessionUrl: URL.createObjectURL(f), // 다운로드용, 세션 내에서만 유효
+  async function startScan() {
+    if (!isElectron || scanning) return
+    if (!roots.length) { showToast('스캔할 폴더를 1개 이상 추가해 주세요', 'error'); return }
+    setScanning(true)
+    setScanResult(null)
+    setSelected(new Set())
+    setActiveCat(null)
+    setProgress({ phase: 'walk', count: 0 })
+    try {
+      const res = await window.oasis.startScan(roots)
+      if (res.error) showToast(res.error, 'error')
+      else if (res.cancelled) showToast('스캔 취소됨', 'info')
+      else {
+        setScanResult(res)
+        showToast(`스캔 완료 · ${res.totals.fileCount.toLocaleString()}개 파일`, 'ok')
       }
-      const body = createFileBody(meta, canvasW, dropX + (idx * 14))
-      Matter.Body.setVelocity(body, { x: (Math.random() - 0.5) * 2, y: 4 })
-      bodyMapRef.current.set(body.id, meta)
-      Matter.World.add(engineRef.current.world, body)
-      newMetas.push(meta)
-    })
-    setFiles(prev => [...prev, ...newMetas])
-  }, [])
-
-  const handleDragOver = (e) => { e.preventDefault(); setDragOver(true) }
-  const handleDragLeave = (e) => {
-    // 컨테이너 안에서 자식으로 옮겨가는 경우는 무시
-    if (e.currentTarget.contains(e.relatedTarget)) return
-    setDragOver(false)
+    } finally {
+      setScanning(false)
+      setProgress(null)
+    }
+  }
+  async function cancelScan() {
+    if (!scanning) return
+    await window.oasis.cancelScan()
+    setScanning(false)
+    setProgress(null)
   }
 
-  function clearAll() {
-    if (!window.confirm('정말 모든 파일을 비울까요?')) return
-    if (engineRef.current) {
-      const world = engineRef.current.world
-      Matter.Composite.allBodies(world).forEach(b => {
-        if (bodyMapRef.current.has(b.id)) Matter.World.remove(world, b)
+  const groupedItems = useMemo(() => {
+    if (!scanResult) return {}
+    const dupFlat = []
+    scanResult.duplicates.forEach((group, gi) => {
+      group.forEach((f, idx) => {
+        dupFlat.push({ ...f, _dupGroup: gi, _keepRecommended: idx === 0 })
+      })
+    })
+    return {
+      huge: scanResult.huge,
+      old: scanResult.old,
+      screenshots: scanResult.screenshots,
+      temp: scanResult.temp,
+      duplicates: dupFlat,
+      emptyDirs: scanResult.emptyDirs.map(d => ({ ...d, name: d.path.split(/[\\/]/).pop(), size: 0 })),
+    }
+  }, [scanResult])
+
+  const catStats = useMemo(() => {
+    const out = {}
+    for (const c of CATS) {
+      const items = groupedItems[c.id] || []
+      let count = items.length
+      let size = items.reduce((s, it) => s + (it.size || 0), 0)
+      if (c.id === 'duplicates' && scanResult) {
+        count = items.filter(it => !it._keepRecommended).length
+        size = items.filter(it => !it._keepRecommended).reduce((s, it) => s + (it.size || 0), 0)
+      }
+      out[c.id] = { count, size }
+    }
+    return out
+  }, [groupedItems, scanResult])
+
+  const totalRecoverable = useMemo(() => {
+    if (!scanResult) return 0
+    const set = new Map()
+    for (const c of CATS) {
+      if (c.id === 'duplicates') {
+        for (const it of groupedItems.duplicates) {
+          if (!it._keepRecommended) set.set(it.path, it.size || 0)
+        }
+      } else {
+        for (const it of groupedItems[c.id] || []) set.set(it.path, it.size || 0)
+      }
+    }
+    return Array.from(set.values()).reduce((s, n) => s + n, 0)
+  }, [groupedItems, scanResult])
+
+  const selectedStats = useMemo(() => {
+    if (!scanResult) return { count: 0, size: 0 }
+    let count = 0, size = 0
+    const seen = new Set()
+    for (const c of CATS) {
+      for (const it of groupedItems[c.id] || []) {
+        if (selected.has(it.path) && !seen.has(it.path)) {
+          seen.add(it.path)
+          count++
+          size += it.size || 0
+        }
+      }
+    }
+    return { count, size }
+  }, [selected, groupedItems, scanResult])
+
+  function toggleSelect(path) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path); else next.add(path)
+      return next
+    })
+  }
+  function selectAllInCategory(catId) {
+    const items = groupedItems[catId] || []
+    setSelected(prev => {
+      const next = new Set(prev)
+      for (const it of items) {
+        if (catId === 'duplicates' && it._keepRecommended) continue
+        next.add(it.path)
+      }
+      return next
+    })
+  }
+  function clearSelectionInCategory(catId) {
+    const items = groupedItems[catId] || []
+    setSelected(prev => {
+      const next = new Set(prev)
+      for (const it of items) next.delete(it.path)
+      return next
+    })
+  }
+  function selectRecommended() {
+    const next = new Set()
+    for (const it of groupedItems.temp || []) next.add(it.path)
+    for (const it of groupedItems.emptyDirs || []) next.add(it.path)
+    for (const it of groupedItems.duplicates || []) {
+      if (!it._keepRecommended) next.add(it.path)
+    }
+    setSelected(next)
+  }
+
+  async function trashSelected() {
+    if (selectedStats.count === 0) return
+    const paths = Array.from(selected)
+    const sizeMap = {}
+    for (const c of CATS) {
+      for (const it of groupedItems[c.id] || []) sizeMap[it.path] = it.size || 0
+    }
+    setToast(null)
+    const { results } = await window.oasis.trashMany(paths)
+    const okPaths = results.filter(r => r.ok).map(r => r.path)
+    const failed = results.filter(r => !r.ok)
+    if (okPaths.length) {
+      const okSet = new Set(okPaths)
+      setScanResult(prev => {
+        if (!prev) return prev
+        const clean = (arr) => arr.filter(it => !okSet.has(it.path))
+        return {
+          ...prev,
+          huge: clean(prev.huge),
+          old: clean(prev.old),
+          screenshots: clean(prev.screenshots),
+          temp: clean(prev.temp),
+          emptyDirs: clean(prev.emptyDirs),
+          duplicates: prev.duplicates
+            .map(group => group.filter(it => !okSet.has(it.path)))
+            .filter(group => group.length > 1),
+        }
+      })
+      setSelected(prev => {
+        const next = new Set(prev)
+        okPaths.forEach(p => next.delete(p))
+        return next
       })
     }
-    bodyMapRef.current.clear()
-    files.forEach(f => f.sessionUrl && URL.revokeObjectURL(f.sessionUrl))
-    setFiles([])
+    const recovered = okPaths.reduce((s, p) => s + (sizeMap[p] || 0), 0)
+    if (failed.length === 0) showToast(`${okPaths.length}개 휴지통으로 · ${formatBytes(recovered)} 회수`, 'ok')
+    else showToast(`완료 ${okPaths.length} · 실패 ${failed.length}`, failed.length > okPaths.length ? 'error' : 'info')
   }
 
-  function downloadOne(meta) {
-    if (!meta.sessionUrl) {
-      alert('새로고침 이후에는 원본 파일이 사라져 다운로드할 수 없습니다. 다시 끌어다 놓아 주세요.')
-      return
-    }
-    const a = document.createElement('a')
-    a.href = meta.sessionUrl
-    a.download = meta.name
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-  }
+  /* ─── 렌더 ─── */
 
-  const totalBytes = files.reduce((s, f) => s + (f.size || 0), 0)
-  const capacityPct = Math.min(100, (totalBytes / MAX_CAPACITY_BYTES) * 100)
+  if (!isElectron) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-stone-50 text-stone-700">
+        <div className="max-w-md text-center px-6">
+          <p className="text-lg font-semibold text-stone-900">Electron 환경에서 실행해 주세요</p>
+          <p className="text-sm mt-2 text-stone-500">터미널에서 <code className="bg-stone-100 px-1.5 py-0.5 text-stone-700 text-xs">npm run dev</code></p>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-slate-900 text-slate-100 no-select">
-      {/* TOP BAR */}
-      <header className="flex items-center justify-between px-5 py-3 border-b border-slate-700/60 bg-slate-900/80 backdrop-blur shrink-0">
-        <div className="flex items-center gap-3">
-          <Sparkles className="w-6 h-6 text-fuchsia-400" />
-          <div className="text-left">
-            <h1 className="text-lg font-bold tracking-tight leading-tight">바탕화면 대청소 블록</h1>
-            <p className="text-[11px] text-slate-400">Office Oasis · 끌어다 놓으면 떨어집니다</p>
-          </div>
-        </div>
+    <div className="h-screen w-screen flex flex-col bg-stone-50 text-stone-900">
+      <Header
+        scanResult={scanResult}
+        totalRecoverable={totalRecoverable}
+        scanning={scanning}
+        onRescan={startScan}
+      />
 
-        <div className="flex-1 mx-8 max-w-md hidden sm:block">
-          <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-            <span>적재 용량 ({files.length}개)</span>
-            <span>{formatBytes(totalBytes)} / {formatBytes(MAX_CAPACITY_BYTES)}</span>
-          </div>
-          <div className="h-2 rounded-full bg-slate-700 overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-fuchsia-500 via-violet-500 to-sky-500 transition-all"
-              style={{ width: `${capacityPct}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setPanicMode(p => !p)}
-            className="px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-xs flex items-center gap-1.5 border border-slate-700"
-            title="Space 키로도 전환됩니다"
-          >
-            <ListChecks className="w-4 h-4" /> 상사 감지 모드
-          </button>
-          <button
-            onClick={clearAll}
-            className="px-3 py-1.5 rounded-md bg-rose-600/90 hover:bg-rose-500 text-xs flex items-center gap-1.5"
-          >
-            <Trash2 className="w-4 h-4" /> 전체 비우기
-          </button>
-        </div>
-      </header>
-
-      {/* MAIN AREA */}
-      <main className="relative flex-1 overflow-hidden">
-        <div
-          ref={sceneRef}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          className="absolute inset-0 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900"
-        />
-
-        {dragOver && (
-          <div className="absolute inset-4 border-4 border-dashed border-fuchsia-400/70 rounded-2xl pointer-events-none flex items-center justify-center">
-            <div className="text-2xl font-bold text-fuchsia-300 drop-shadow">여기에 떨어뜨리세요 💫</div>
-          </div>
+      <main className="flex-1 overflow-hidden">
+        {!scanResult && (
+          <ScanLanding
+            roots={roots}
+            onAddRoot={addRoot}
+            onRemoveRoot={removeRoot}
+            onStart={startScan}
+            onCancel={cancelScan}
+            scanning={scanning}
+            progress={progress}
+          />
         )}
 
-        {files.length === 0 && !dragOver && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="text-center text-slate-500">
-              <p className="text-xl">파일을 끌어다 놓아 보세요 ✨</p>
-              <p className="text-sm mt-2">왼쪽 → 🔥 당장 할 일 · 가운데 → 🥶 컨펌 대기 · 오른쪽 → 🗑️ 퇴사시 삭제</p>
-              <p className="text-xs mt-4 text-slate-600">Space 키 = 상사 감지 모드 (엑셀 화면으로 즉시 전환)</p>
-            </div>
-          </div>
+        {scanResult && activeCat === null && (
+          <ResultSummary
+            scanResult={scanResult}
+            catStats={catStats}
+            totalRecoverable={totalRecoverable}
+            onOpenCategory={(catId) => setActiveCat(catId)}
+            onSelectRecommended={selectRecommended}
+          />
         )}
 
-        {/* 상사 감지 모드: 엑셀 풍 리스트 오버레이 */}
-        {panicMode && (
-          <div className="absolute inset-0 bg-white text-slate-900 overflow-auto thin-scroll">
-            <div className="sticky top-0 z-10 bg-emerald-700 text-white px-4 py-1.5 text-sm font-medium flex items-center justify-between">
-              <span>📊 분기실적_정리표.xlsx — Microsoft Excel</span>
-              <button onClick={() => setPanicMode(false)} className="text-xs underline">[보고서 닫기]</button>
-            </div>
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="bg-slate-100 border-b border-slate-300">
-                  <th className="border border-slate-300 px-3 py-1.5 text-left w-12">No.</th>
-                  <th className="border border-slate-300 px-3 py-1.5 text-left">파일명</th>
-                  <th className="border border-slate-300 px-3 py-1.5 text-left">분류</th>
-                  <th className="border border-slate-300 px-3 py-1.5 text-left">유형</th>
-                  <th className="border border-slate-300 px-3 py-1.5 text-right">용량</th>
-                  <th className="border border-slate-300 px-3 py-1.5 text-left">등록일</th>
-                  <th className="border border-slate-300 px-3 py-1.5 text-center w-20">동작</th>
-                </tr>
-              </thead>
-              <tbody>
-                {files.length === 0 && (
-                  <tr><td colSpan={7} className="text-center py-8 text-slate-400">데이터 없음</td></tr>
-                )}
-                {files.map((f, idx) => {
-                  const zone = ZONES.find(z => z.id === f.zone) ?? ZONES[1]
-                  return (
-                    <tr key={f.id} className={idx % 2 ? 'bg-slate-50' : ''}>
-                      <td className="border border-slate-300 px-3 py-1">{idx + 1}</td>
-                      <td className="border border-slate-300 px-3 py-1 font-mono text-xs">{f.name}</td>
-                      <td className="border border-slate-300 px-3 py-1">{zone.emoji} {zone.label}</td>
-                      <td className="border border-slate-300 px-3 py-1 text-slate-500">{f.type || '-'}</td>
-                      <td className="border border-slate-300 px-3 py-1 text-right tabular-nums">{formatBytes(f.size)}</td>
-                      <td className="border border-slate-300 px-3 py-1 text-slate-500">{new Date(f.createdAt).toLocaleString('ko-KR')}</td>
-                      <td className="border border-slate-300 px-3 py-1 text-center">
-                        <button
-                          onClick={() => downloadOne(f)}
-                          className="text-xs text-emerald-700 hover:underline"
-                        >
-                          다운로드
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            <p className="text-center text-xs text-slate-400 py-3">Space 키를 다시 누르면 원래 화면으로 돌아갑니다.</p>
-          </div>
+        {scanResult && activeCat && (
+          <CategoryView
+            catId={activeCat}
+            items={groupedItems[activeCat] || []}
+            selected={selected}
+            onToggle={toggleSelect}
+            onSelectAll={() => selectAllInCategory(activeCat)}
+            onClear={() => clearSelectionInCategory(activeCat)}
+            onBack={() => setActiveCat(null)}
+            onReveal={(p) => window.oasis.reveal(p)}
+            onOpen={(p) => window.oasis.open(p)}
+          />
         )}
       </main>
+
+      {selectedStats.count > 0 && (
+        <div className="border-t border-stone-200 bg-white px-6 py-3 flex items-center justify-between shrink-0">
+          <div className="text-sm tnum">
+            <span className="text-stone-500">선택</span>
+            <span className="ml-1.5 font-semibold">{selectedStats.count}</span>
+            <span className="ml-3 text-stone-400">·</span>
+            <span className="ml-3 font-semibold">{formatBytes(selectedStats.size)}</span>
+            <span className="ml-1 text-stone-500">회수</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setSelected(new Set())}
+              className="text-xs text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline">
+              선택 해제
+            </button>
+            <button onClick={trashSelected}
+              className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white text-sm">
+              휴지통으로 보내기
+            </button>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className={`fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 text-sm shadow-sm border
+          ${toast.kind === 'error' ? 'bg-stone-900 text-white border-stone-900'
+            : toast.kind === 'ok' ? 'bg-stone-900 text-white border-stone-900'
+            : 'bg-white text-stone-900 border-stone-200'}`}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ───────── 헤더 ───────── */
+
+function Header({ scanResult, totalRecoverable, scanning, onRescan }) {
+  return (
+    <header className="px-8 py-5 border-b border-stone-200 bg-white shrink-0">
+      <div className="flex items-end justify-between max-w-6xl mx-auto">
+        <div>
+          <p className="eyebrow">Office Oasis</p>
+          <h1 className="text-xl font-semibold tracking-tight mt-1">바탕화면 대청소</h1>
+        </div>
+        {scanResult && (
+          <div className="flex items-center gap-8 text-sm">
+            <div className="text-right">
+              <p className="eyebrow">스캔됨</p>
+              <p className="font-semibold tnum mt-0.5">
+                {scanResult.totals.fileCount.toLocaleString()}
+                <span className="text-stone-500 font-normal ml-1">파일</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="eyebrow">정리 가능</p>
+              <p className="font-semibold tnum mt-0.5">{formatBytes(totalRecoverable)}</p>
+            </div>
+            <button onClick={onRescan} disabled={scanning}
+              className="text-sm text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline disabled:opacity-40">
+              다시 스캔
+            </button>
+          </div>
+        )}
+      </div>
+    </header>
+  )
+}
+
+/* ───────── 랜딩 ───────── */
+
+function ScanLanding({ roots, onAddRoot, onRemoveRoot, onStart, onCancel, scanning, progress }) {
+  return (
+    <div className="h-full overflow-auto thin-scroll">
+      <div className="max-w-2xl mx-auto px-8 py-16">
+        <p className="eyebrow">청소 준비</p>
+        <h2 className="text-3xl font-semibold tracking-tight mt-2 leading-tight">
+          어디를 정리해 드릴까요.
+        </h2>
+        <p className="text-stone-500 mt-3 leading-relaxed">
+          선택한 폴더를 재귀 탐색해 거대 파일·오래된 파일·스크린샷·임시 파일·중복·빈 폴더를 찾아냅니다.<br />
+          한 번에 휴지통으로 옮기고, 필요하면 복원할 수 있습니다.
+        </p>
+
+        <div className="mt-10">
+          <div className="flex items-baseline justify-between mb-3">
+            <p className="eyebrow">대상 폴더</p>
+            <button onClick={onAddRoot} disabled={scanning}
+              className="text-xs text-stone-500 hover:text-stone-900 inline-flex items-center gap-1 underline-offset-4 hover:underline disabled:opacity-40">
+              <Plus className="w-3 h-3" /> 폴더 추가
+            </button>
+          </div>
+          {roots.length === 0 && <p className="text-sm text-stone-400">기본 폴더가 로드 중…</p>}
+          <ul className="border-t border-stone-200">
+            {roots.map((r) => (
+              <li key={r} className="flex items-center justify-between py-2.5 border-b border-stone-200 text-sm">
+                <span className="text-stone-700 truncate font-mono text-xs" title={r}>{r}</span>
+                <button onClick={() => onRemoveRoot(r)} disabled={scanning}
+                  className="text-stone-400 hover:text-stone-900 disabled:opacity-30 shrink-0 ml-3">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {!scanning && (
+          <button onClick={onStart} disabled={roots.length === 0}
+            className="mt-10 w-full py-3.5 bg-stone-900 hover:bg-stone-800 text-white text-sm font-medium tracking-wide disabled:opacity-30">
+            스캔 시작
+          </button>
+        )}
+
+        {scanning && (
+          <div className="mt-10 border-t border-stone-200 pt-6">
+            <div className="flex items-baseline justify-between mb-3">
+              <p className="text-sm font-medium">{phaseLabel(progress)}</p>
+              <button onClick={onCancel}
+                className="text-xs text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline">
+                취소
+              </button>
+            </div>
+            <ProgressBar progress={progress} />
+            <p className="mt-3 text-[11px] text-stone-400 font-mono truncate">
+              {progress?.currentPath ? shortPath(progress.currentPath, 80) : '준비 중…'}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function phaseLabel(p) {
+  if (!p) return '준비 중'
+  switch (p.phase) {
+    case 'walk':      return `파일 목록 수집 중 · ${(p.count || 0).toLocaleString()}`
+    case 'walk-done': return '목록 수집 완료'
+    case 'hash':      return '중복 검사 (해시 비교)'
+    case 'hash-done': return '중복 검사 완료'
+    default:          return p.phase
+  }
+}
+
+function ProgressBar({ progress }) {
+  let pct = null
+  if (progress?.phase === 'hash' && progress.total) {
+    pct = Math.min(100, (progress.current / progress.total) * 100)
+  }
+  return (
+    <div className="h-px bg-stone-200 relative overflow-hidden">
+      <div
+        className={`h-full bg-stone-900 transition-all ${pct == null ? 'animate-pulse w-1/3' : ''}`}
+        style={pct != null ? { width: `${pct}%` } : undefined}
+      />
+    </div>
+  )
+}
+
+/* ───────── 결과 요약 ───────── */
+
+function ResultSummary({ scanResult, catStats, totalRecoverable, onOpenCategory, onSelectRecommended }) {
+  return (
+    <div className="h-full overflow-auto thin-scroll">
+      <div className="max-w-3xl mx-auto px-8 py-12">
+        {/* 영웅 통계: 그라데이션 카드 대신 큰 숫자 + 얇은 가로선 */}
+        <div className="border-b border-stone-200 pb-8 mb-2">
+          <p className="eyebrow">정리 가능 용량</p>
+          <p className="text-6xl font-semibold tracking-tight tnum mt-2">
+            {formatBytes(totalRecoverable)}
+          </p>
+          <div className="flex items-end justify-between mt-4">
+            <p className="text-sm text-stone-500">
+              전체 {scanResult.totals.fileCount.toLocaleString()}개 파일 · {formatBytes(scanResult.totals.totalSize)} 중
+            </p>
+            <button onClick={onSelectRecommended}
+              className="text-sm text-stone-900 hover:text-stone-600 underline-offset-4 underline">
+              안전한 항목만 자동 선택 ↗
+            </button>
+          </div>
+        </div>
+
+        {/* 카테고리 — 카드가 아닌 행 리스트 */}
+        <ul>
+          {CATS.map((c) => {
+            const stat = catStats[c.id] || { count: 0, size: 0 }
+            const empty = stat.count === 0
+            return (
+              <li key={c.id} className="border-b border-stone-200">
+                <button
+                  onClick={() => !empty && onOpenCategory(c.id)}
+                  disabled={empty}
+                  className={`w-full flex items-baseline py-5 group ${empty ? 'opacity-30' : 'hover:bg-stone-100/60 cursor-pointer'}`}
+                >
+                  <div className="flex-1 text-left pl-2">
+                    <p className="font-semibold text-base">{c.label}</p>
+                    <p className="text-xs text-stone-500 mt-0.5">{c.hint}</p>
+                  </div>
+                  <div className="w-24 text-right tnum text-stone-700">{stat.count.toLocaleString()}</div>
+                  <div className="w-32 text-right tnum font-semibold">{formatBytes(stat.size)}</div>
+                  <div className="w-10 text-right pr-2">
+                    {!empty && (
+                      <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-stone-900 inline" />
+                    )}
+                  </div>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+/* ───────── 카테고리 디테일 ───────── */
+
+function CategoryView({ catId, items, selected, onToggle, onSelectAll, onClear, onBack, onReveal, onOpen }) {
+  const cat = CATS.find(c => c.id === catId)
+  const sorted = useMemo(() => items.slice().sort((a, b) => (b.size || 0) - (a.size || 0)), [items])
+  const allSelected = items.length > 0 && items.every(it => selected.has(it.path) || (catId === 'duplicates' && it._keepRecommended))
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="px-8 py-4 border-b border-stone-200 bg-white flex items-center justify-between shrink-0">
+        <div className="flex items-baseline gap-4">
+          <button onClick={onBack}
+            className="text-sm text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline">
+            ← 뒤로
+          </button>
+          <div>
+            <p className="eyebrow">{cat.hint}</p>
+            <h2 className="font-semibold mt-0.5">{cat.label} <span className="text-stone-400 font-normal ml-1">{items.length.toLocaleString()}</span></h2>
+          </div>
+        </div>
+        <button onClick={allSelected ? onClear : onSelectAll}
+          className="text-xs text-stone-500 hover:text-stone-900 underline-offset-4 hover:underline">
+          {allSelected ? '전체 해제' : '카테고리 전체 선택'}
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-auto thin-scroll">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-stone-50 border-b border-stone-200">
+            <tr className="text-left">
+              <th className="px-4 py-2.5 w-10"></th>
+              <th className="px-4 py-2.5 eyebrow font-medium">이름</th>
+              <th className="px-4 py-2.5 eyebrow font-medium">경로</th>
+              <th className="px-4 py-2.5 eyebrow font-medium text-right w-28">용량</th>
+              <th className="px-4 py-2.5 eyebrow font-medium w-28">수정</th>
+              <th className="px-4 py-2.5 w-24"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.length === 0 && (
+              <tr><td colSpan={6} className="text-center py-16 text-stone-400">항목 없음</td></tr>
+            )}
+            {sorted.map((it) => {
+              const isSelected = selected.has(it.path)
+              const isKeep = catId === 'duplicates' && it._keepRecommended
+              return (
+                <tr key={it.path}
+                    className={`border-b border-stone-100 hover:bg-stone-100/50 ${isSelected ? 'bg-stone-100' : ''} ${isKeep ? 'opacity-40' : ''}`}>
+                  <td className="px-4 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => onToggle(it.path)}
+                      disabled={isKeep}
+                      className="accent-stone-900 w-3.5 h-3.5 cursor-pointer disabled:cursor-not-allowed"
+                    />
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-xs">
+                    {isKeep && <span className="text-stone-900 mr-2 not-italic font-sans text-[10px] tracking-wider">KEEP</span>}
+                    {it.name}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-[11px] text-stone-400" title={it.path}>
+                    {shortPath(it.path, 70)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right tnum">{formatBytes(it.size)}</td>
+                  <td className="px-4 py-2.5 text-stone-500 text-xs tnum">
+                    {it.mtimeMs ? `${ageDays(it.mtimeMs)}일 전` : '—'}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => onReveal(it.path)}
+                        className="p-1.5 text-stone-400 hover:text-stone-900"
+                        title="탐색기에서 보기">
+                        <FolderOpen className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => onOpen(it.path)}
+                        className="p-1.5 text-stone-400 hover:text-stone-900"
+                        title="열기">
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

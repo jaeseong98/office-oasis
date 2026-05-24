@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="바탕화면을 진짜로 청소합니다. 거대 파일·묵은 파일·스크린샷·중복을 한 번에 회수." />
+  <meta property="og:title" content="Office Oasis — 데스크톱 대청소" />
+  <meta property="og:description" content="거대 파일·묵은 파일·스크린샷·중복을 한 번에 회수." />
+  <title>Office Oasis — 데스크톱 대청소</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <p class="brand">Office Oasis</p>
+      <nav>
+        <a class="navlink" href="#features">기능</a>
+        <a class="navlink" href="https://github.com/jaeseong98/office-oasis" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <p class="eyebrow">데스크톱 대청소 유틸리티</p>
+        <h1 class="title">
+          바탕화면을 <em>진짜로</em><br />
+          청소해 드립니다.
+        </h1>
+        <p class="lead">
+          거대 파일·90일 넘게 묵은 파일·스크린샷 잔해·임시 파일·중복 파일·빈 폴더를<br class="md-only" />
+          한 번에 찾아내고, 선택해서 휴지통으로 보냅니다. 복원 가능.
+        </p>
+
+        <div class="download" id="download">
+          <a id="primary-cta" class="btn-primary" href="https://github.com/jaeseong98/office-oasis/releases/latest" target="_blank" rel="noopener">
+            Download
+          </a>
+          <a id="secondary-cta" class="btn-secondary" href="https://github.com/jaeseong98/office-oasis/releases/latest" target="_blank" rel="noopener">
+            다른 OS
+          </a>
+        </div>
+
+        <p class="version" id="version-line">최신 버전 확인 중…</p>
+
+        <div class="notice">
+          <strong>처음 실행 시 안내</strong><br />
+          코드 서명되지 않아 Windows에서 <em>"Windows의 PC 보호"</em> 화면이 한 번 나옵니다.
+          <br />
+          <span class="muted">→ "추가 정보" 클릭 → "실행" 버튼</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <div class="container">
+        <p class="eyebrow">무엇을 청소하나</p>
+        <ul class="feature-list">
+          <li>
+            <p class="feature-label">거대 파일</p>
+            <p class="feature-desc">50MB 이상의 단일 파일을 모두 추려냄. 보통 영상·iso·설치 파일.</p>
+          </li>
+          <li>
+            <p class="feature-label">오래 묵은 파일</p>
+            <p class="feature-desc">마지막 수정 90일이 지난, 잊고 있던 파일들.</p>
+          </li>
+          <li>
+            <p class="feature-label">스크린샷 잔해</p>
+            <p class="feature-desc">Screenshot_*, 스크린샷 *, Screen Shot * 등 패턴 매칭.</p>
+          </li>
+          <li>
+            <p class="feature-label">임시·잔해 파일</p>
+            <p class="feature-desc">.tmp, .crdownload, .part, .bak, ~$… 같은 임시 파일과 0KB 파일.</p>
+          </li>
+          <li>
+            <p class="feature-label">중복 파일</p>
+            <p class="feature-desc">SHA1 해시로 동일 파일을 탐지. 가장 오래된 1개는 자동 보존 추천.</p>
+          </li>
+          <li>
+            <p class="feature-label">빈 폴더</p>
+            <p class="feature-desc">내용물 없이 자리만 차지하던 폴더를 정리.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="how">
+      <div class="container">
+        <p class="eyebrow">동작 방식</p>
+        <ol class="how-list">
+          <li><span class="num">01</span> 스캔할 폴더를 지정. 기본: 바탕화면 · Downloads · Documents.</li>
+          <li><span class="num">02</span> 카테고리별 회수 가능 용량을 보여줍니다.</li>
+          <li><span class="num">03</span> 안전한 항목 자동 선택, 또는 직접 체크박스로 고름.</li>
+          <li><span class="num">04</span> "휴지통으로 보내기" 한 번. <em>복원 가능합니다.</em></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="closing">
+      <div class="container">
+        <p>오픈소스 · 무료 · 모든 데이터는 본인 PC에 머무릅니다.</p>
+        <p class="muted">바탕화면을 클라우드에 올리거나 외부로 전송하지 않습니다.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <span>Office Oasis</span>
+      <span class="muted">MIT License</span>
+      <a href="https://github.com/jaeseong98/office-oasis" target="_blank" rel="noopener" class="navlink">GitHub →</a>
+    </div>
+  </footer>
+
+  <script>
+    /* ────── OS 감지 + 다운로드 링크 설정 ────── */
+    const REPO = 'jaeseong98/office-oasis' // 배포 후 본인 GitHub 경로로 교체
+    const ASSETS = {
+      windows: 'OfficeOasis-Setup.exe',
+      mac:     'OfficeOasis.dmg',
+      linux:   'OfficeOasis.AppImage',
+    }
+    const LABELS = { windows: 'Windows', mac: 'macOS', linux: 'Linux' }
+
+    function detectOS() {
+      const ua = (navigator.userAgent || '').toLowerCase()
+      if (ua.includes('mac')) return 'mac'
+      if (ua.includes('linux')) return 'linux'
+      return 'windows'
+    }
+
+    function downloadURL(os) {
+      return `https://github.com/${REPO}/releases/latest/download/${ASSETS[os]}`
+    }
+
+    const os = detectOS()
+    const primary = document.getElementById('primary-cta')
+    const secondary = document.getElementById('secondary-cta')
+    primary.textContent = `Download for ${LABELS[os]}`
+    primary.href = downloadURL(os)
+    const others = Object.keys(LABELS).filter(k => k !== os).map(k => LABELS[k]).join(' · ')
+    secondary.textContent = `다른 OS — ${others}`
+    secondary.href = `https://github.com/${REPO}/releases/latest`
+
+    /* ────── 최신 버전 표시 (GitHub API) ────── */
+    fetch(`https://api.github.com/repos/${REPO}/releases/latest`)
+      .then(r => r.ok ? r.json() : null)
+      .then(rel => {
+        const line = document.getElementById('version-line')
+        if (!rel) { line.textContent = ''; return }
+        const date = new Date(rel.published_at).toLocaleDateString('ko-KR')
+        line.textContent = `최신 ${rel.tag_name} · ${date} 배포`
+      })
+      .catch(() => { document.getElementById('version-line').textContent = '' })
+  </script>
+</body>
+</html>
