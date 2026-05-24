@@ -25,6 +25,26 @@ let launcherWindow = null
 let tray = null
 let scanState = { running: false, cancelToken: 0 }
 
+/* ───────── 렌더러 URL ───────── */
+// loadFile + query 조합이 asar 환경에서 누락되는 경우가 있어 hash 기반으로 통일.
+// 라우팅(main.jsx)은 hash와 query 둘 다 받아서 하위 호환 유지.
+function rendererURL(hash) {
+  const devUrl = process.env.VITE_DEV_SERVER_URL
+  if (devUrl) return hash ? `${devUrl}#${hash}` : devUrl
+  const filePath = path.join(__dirname, '..', 'dist', 'index.html')
+  const base = 'file:///' + filePath.replace(/\\/g, '/')
+  return hash ? `${base}#${hash}` : base
+}
+
+// 모든 창에 F12 = 개발자도구 토글
+function attachDevToolsShortcut(win) {
+  win.webContents.on('before-input-event', (_e, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12') {
+      win.webContents.toggleDevTools()
+    }
+  })
+}
+
 /* ───────── 경로 / 무시 규칙 ───────── */
 
 function defaultRoots() {
@@ -433,14 +453,16 @@ function createClipboardWindow() {
     },
   })
 
-  const devUrl = process.env.VITE_DEV_SERVER_URL
-  if (devUrl) {
-    clipboardWindow.loadURL(`${devUrl}?window=clipboard`)
-  } else {
-    clipboardWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), {
-      query: { window: 'clipboard' },
-    })
-  }
+  clipboardWindow.loadURL(rendererURL('clipboard'))
+  attachDevToolsShortcut(clipboardWindow)
+
+  // 창이 처음 만들어질 때는 React가 마운트되기 전이라 즉시 send 하면 메시지 유실.
+  // 렌더러가 준비된 다음 한 번 더 보내준다.
+  clipboardWindow.webContents.once('did-finish-load', () => {
+    if (clipboardWindow && !clipboardWindow.isDestroyed()) {
+      clipboardWindow.webContents.send('clipboard:update', clipboardHistory)
+    }
+  })
 
   clipboardWindow.on('blur', () => {
     if (!clipboardWindow.isDestroyed() && !clipboardWindow.webContents.isDevToolsOpened()) {
@@ -622,14 +644,8 @@ function createLauncherWindow() {
     },
   })
 
-  const devUrl = process.env.VITE_DEV_SERVER_URL
-  if (devUrl) {
-    launcherWindow.loadURL(`${devUrl}?window=launcher`)
-  } else {
-    launcherWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), {
-      query: { window: 'launcher' },
-    })
-  }
+  launcherWindow.loadURL(rendererURL('launcher'))
+  attachDevToolsShortcut(launcherWindow)
 
   launcherWindow.on('close', (e) => {
     if (!app.isQuitting && tray && !tray.isDestroyed()) {
@@ -890,12 +906,10 @@ function createWindow() {
     },
   })
 
-  const devUrl = process.env.VITE_DEV_SERVER_URL
-  if (devUrl) {
-    mainWindow.loadURL(devUrl)
+  mainWindow.loadURL(rendererURL())
+  attachDevToolsShortcut(mainWindow)
+  if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
 
   // 트레이가 있으면 닫기 = 숨기기 (백그라운드 유지)
