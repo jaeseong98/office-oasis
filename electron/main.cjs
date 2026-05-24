@@ -542,11 +542,22 @@ function launcherFilePath() {
   return path.join(app.getPath('userData'), 'launcher-tiles.json')
 }
 
+function guessCategory(tile) {
+  if (tile.category) return tile.category
+  if (tile.type === 'url') return 'web'
+  if (tile.type === 'folder') return 'tool'
+  if (tile.type === 'file') return 'tool'
+  return 'app'
+}
+
 function loadLauncherTiles() {
   try {
     const raw = fs.readFileSync(launcherFilePath(), 'utf8')
     const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) launcherTiles = parsed
+    if (Array.isArray(parsed)) {
+      // 기존 v0.3.x 타일에 카테고리 마이그레이션
+      launcherTiles = parsed.map(t => ({ ...t, category: guessCategory(t) }))
+    }
   } catch { launcherTiles = [] }
 }
 
@@ -593,11 +604,13 @@ async function fetchFaviconDataUrl(url) {
 
 function createLauncherWindow() {
   launcherWindow = new BrowserWindow({
-    width: 960,
-    height: 680,
-    minWidth: 640,
-    minHeight: 480,
-    backgroundColor: '#fafaf9',
+    width: 1400,
+    height: 900,
+    minWidth: 900,
+    minHeight: 600,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
     title: 'Office Oasis · 런처',
     autoHideMenuBar: true,
     icon: path.join(__dirname, 'assets', 'icon.png'),
@@ -629,9 +642,27 @@ function createLauncherWindow() {
 
 function showLauncher() {
   if (!launcherWindow || launcherWindow.isDestroyed()) createLauncherWindow()
+  // PC방 런처 느낌 — 항상 풀스크린으로 띄움
+  if (!launcherWindow.isFullScreen()) launcherWindow.setFullScreen(true)
   launcherWindow.show()
   launcherWindow.focus()
 }
+
+ipcMain.handle('launcher:hide', () => {
+  if (launcherWindow && !launcherWindow.isDestroyed()) launcherWindow.hide()
+  return { ok: true }
+})
+
+ipcMain.handle('launcher:toggle-fullscreen', () => {
+  if (launcherWindow && !launcherWindow.isDestroyed()) {
+    launcherWindow.setFullScreen(!launcherWindow.isFullScreen())
+  }
+  return { ok: true }
+})
+
+ipcMain.handle('launcher:is-fullscreen', () => {
+  return launcherWindow && !launcherWindow.isDestroyed() ? launcherWindow.isFullScreen() : false
+})
 
 ipcMain.handle('launcher:list', () => launcherTiles)
 
@@ -642,6 +673,7 @@ ipcMain.handle('launcher:add', async (_e, draft) => {
     type: draft.type,
     title: draft.title || draft.target,
     target: draft.target,
+    category: guessCategory(draft),
     createdAt: Date.now(),
   }
   if (draft.type === 'url') {

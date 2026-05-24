@@ -48,6 +48,9 @@ contextBridge.exposeInMainWorld('oasis', {
   launcherPickFile: () => ipcRenderer.invoke('launcher:pick-file'),
   launcherPickFolder: () => ipcRenderer.invoke('launcher:pick-folder'),
   launcherDroppedPaths: (paths) => ipcRenderer.invoke('launcher:dropped-paths', paths),
+  launcherHide: () => ipcRenderer.invoke('launcher:hide'),
+  launcherToggleFullscreen: () => ipcRenderer.invoke('launcher:toggle-fullscreen'),
+  launcherIsFullscreen: () => ipcRenderer.invoke('launcher:is-fullscreen'),
   onLauncherUpdate: (cb) => {
     const handler = (_e, list) => cb(list)
     ipcRenderer.on('launcher:update', handler)
