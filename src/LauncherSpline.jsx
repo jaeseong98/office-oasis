@@ -1,18 +1,52 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Spline from '@splinetool/react-spline'
 
-// 사용자가 제공한 Spline 씬 URL
 const SPLINE_SCENE_URL = 'https://prod.spline.design/Z2GC06YOowZpBpiO/scene.splinecode'
 
+// 씬에서 숨길 오브젝트 이름 패턴 (배경·다른 디바이스·이펙트 안내문 등)
+const HIDE_PATTERNS = [
+  /^sky$/i,
+  /background.*cube/i,
+  /^background/i,
+  /foreground/i,
+  /animated.*lines?/i,
+  /^Device_Laptop/i,        // 노트북 디바이스 변형
+  /^Device_4[:_]?3/i,        // 4:3 디바이스 변형
+  /TURN ON DOF/i,           // 안내 라벨
+]
+
 /**
- * Spline 씬을 그대로 임베드한 런처 뷰.
- * 씬 안의 카드 오브젝트를 우리 타일 데이터로 매핑하려면 씬 디자인이
- * runtime API 친화적으로 되어 있어야 한다 (오브젝트 이름, 텍스처 교체 가능 등).
- * 현재는 씬을 그대로 보여주는 "데모/배경" 모드.
+ * Spline 씬 임베드 — 배경 정리 후 16:9 데스크톱 모니터만 표시.
+ * onLoad 에서 scene.traverse 로 배경/장식 오브젝트를 숨긴다.
  */
 export default function LauncherSpline({ tiles, onLaunch }) {
+  const splineRef = useRef(null)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(null)
+  const [debug, setDebug] = useState({ hidden: [], total: 0 })
+
+  function handleLoad(splineApp) {
+    splineRef.current = splineApp
+    const hidden = []
+    const allNames = []
+    try {
+      splineApp.scene.traverse((obj) => {
+        if (!obj.name) return
+        allNames.push(obj.name)
+        if (HIDE_PATTERNS.some((p) => p.test(obj.name))) {
+          obj.visible = false
+          hidden.push(obj.name)
+        }
+      })
+      // 콘솔에 전체 오브젝트 목록 — F12 로 확인 후 추가 숨김 패턴 결정 가능
+      console.log('[oasis spline] scene objects:', allNames)
+      console.log('[oasis spline] hidden:', hidden)
+      setDebug({ hidden, total: allNames.length })
+    } catch (err) {
+      console.error('[oasis spline] traversal failed:', err)
+    }
+    setLoaded(true)
+  }
 
   return (
     <div className="w-full h-full relative" style={{ background: '#0a0a0a' }}>
@@ -31,14 +65,16 @@ export default function LauncherSpline({ tiles, onLaunch }) {
       )}
       <Spline
         scene={SPLINE_SCENE_URL}
-        onLoad={() => setLoaded(true)}
+        onLoad={handleLoad}
         onError={(e) => setError(e?.message || 'unknown')}
         style={{ width: '100%', height: '100%' }}
       />
 
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[11px] text-white/50 pointer-events-none tracking-wider">
-        Spline 데모 씬 · 마우스로 카메라 조작
-      </div>
+      {loaded && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[11px] text-white/40 pointer-events-none tracking-wider">
+          Spline 씬 · 배경 {debug.hidden.length}개 숨김 · F12 → Console 에서 전체 오브젝트 목록 확인
+        </div>
+      )}
     </div>
   )
 }
