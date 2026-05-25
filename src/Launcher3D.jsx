@@ -1,7 +1,18 @@
-import { useMemo, useRef, useState } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Html, RoundedBox } from '@react-three/drei'
 import * as THREE from 'three'
+
+const ZOOM_KEY = 'oasis:launcher3d-zoom'
+const ZOOM_MIN = 5
+const ZOOM_MAX = 16
+const ZOOM_DEFAULT = 9.5
+
+function loadZoom() {
+  const v = parseFloat(localStorage.getItem(ZOOM_KEY))
+  if (Number.isFinite(v) && v >= ZOOM_MIN && v <= ZOOM_MAX) return v
+  return ZOOM_DEFAULT
+}
 
 /* ───────── 카테고리 색 ───────── */
 
@@ -151,34 +162,75 @@ function Ring({ tiles, onLaunch, onContextMenu }) {
   )
 }
 
+/* ───────── 카메라 줌 컨트롤 ───────── */
+
+function CameraZoom({ targetZ }) {
+  const { camera } = useThree()
+  useFrame((_, delta) => {
+    camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetZ, Math.min(1, delta * 6))
+    camera.updateProjectionMatrix()
+  })
+  return null
+}
+
 /* ───────── 메인 ───────── */
 
 export default function Launcher3D({ tiles, onLaunch, onContextMenu }) {
+  const [zoom, setZoom] = useState(loadZoom)
+  const [showHint, setShowHint] = useState(false)
+  const hintTimerRef = useRef(null)
+
+  useEffect(() => {
+    try { localStorage.setItem(ZOOM_KEY, String(zoom)) } catch { /* ignore */ }
+  }, [zoom])
+
+  function handleWheel(e) {
+    if (!e.ctrlKey) return
+    e.preventDefault()
+    e.stopPropagation()
+    const step = 0.6
+    setZoom(z => THREE.MathUtils.clamp(z + (e.deltaY > 0 ? step : -step), ZOOM_MIN, ZOOM_MAX))
+    setShowHint(true)
+    if (hintTimerRef.current) clearTimeout(hintTimerRef.current)
+    hintTimerRef.current = setTimeout(() => setShowHint(false), 900)
+  }
+
+  // fog 범위도 카메라 거리에 맞춰 조정 — 줌 멀어지면 fog도 멀게
+  const fogNear = zoom - 0.5
+  const fogFar  = zoom + 4.5
+
   return (
-    <div className="w-full h-full relative" style={{
-      background: 'radial-gradient(ellipse at 50% 30%, #ffffff 0%, #f5f5f4 60%, #e7e5e4 100%)',
-    }}>
+    <div
+      className="w-full h-full relative"
+      style={{ background: 'radial-gradient(ellipse at 50% 30%, #ffffff 0%, #f5f5f4 60%, #e7e5e4 100%)' }}
+      onWheel={handleWheel}
+    >
       <Canvas
-        camera={{ position: [0, 0.8, 7.5], fov: 45 }}
+        camera={{ position: [0, 0.8, ZOOM_DEFAULT], fov: 45 }}
         dpr={[1, 2]}
         gl={{ antialias: true, alpha: true }}
         shadows
       >
-        {/* fog — 뒤쪽 카드를 부드럽게 페이드 (DOF 흉내) */}
-        <fog attach="fog" args={['#fafaf9', 7, 12]} />
-
-        {/* 라이팅 */}
+        <fog attach="fog" args={['#fafaf9', fogNear, fogFar]} />
         <ambientLight intensity={0.65} />
         <directionalLight position={[3, 6, 5]} intensity={0.75} castShadow />
         <directionalLight position={[-4, -2, 3]} intensity={0.22} color="#fde68a" />
 
+        <CameraZoom targetZ={zoom} />
         <Ring tiles={tiles} onLaunch={onLaunch} onContextMenu={onContextMenu} />
       </Canvas>
 
       {/* 안내 텍스트 */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[11px] text-stone-400 pointer-events-none tracking-wider">
-        호버하면 회전 정지 · 클릭해서 실행
+        호버 = 회전 정지 · 클릭 = 실행 · <span className="font-mono">Ctrl + Scroll</span> = 줌
       </div>
+
+      {/* 줌 표시 (휠 사용 시 잠깐 표시) */}
+      {showHint && (
+        <div className="absolute top-4 right-4 px-2.5 py-1 bg-stone-900/80 text-white text-[11px] tnum rounded pointer-events-none">
+          줌 {(zoom).toFixed(1)}
+        </div>
+      )}
     </div>
   )
 }
