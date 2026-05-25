@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, Pin, X, Trash2, Clipboard as ClipIcon } from 'lucide-react'
-import { WindowControls } from './TitleBar.jsx'
+import { Search, Pin, X, Trash2 } from 'lucide-react'
 
 /* ───────── 유틸 ───────── */
 
@@ -57,21 +56,22 @@ export default function ClipboardApp() {
     return items.filter((it) => it.text.toLowerCase().includes(q))
   }, [items, query])
 
-  /* 키보드 네비게이션 */
+  /* 키보드 네비게이션 (탭 안이라 Esc는 무시) */
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === 'Escape') {
-        window.oasis?.clipboardHide()
-      } else if (e.key === 'ArrowDown') {
+      if (e.key === 'ArrowDown') {
         e.preventDefault()
         setActiveIdx((i) => Math.min(filtered.length - 1, i + 1))
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
         setActiveIdx((i) => Math.max(0, i - 1))
-      } else if (e.key === 'Enter') {
-        e.preventDefault()
-        const item = filtered[activeIdx]
-        if (item) window.oasis?.clipboardPaste(item.id)
+      } else if (e.key === 'Enter' && e.target?.tagName !== 'TEXTAREA') {
+        // 입력창 안에서 Enter 누를 때만 붙여넣기 동작 (포커스 안에서)
+        if (document.activeElement === inputRef.current) {
+          e.preventDefault()
+          const item = filtered[activeIdx]
+          if (item) window.oasis?.clipboardPaste(item.id)
+        }
       }
     }
     window.addEventListener('keydown', handler)
@@ -86,21 +86,14 @@ export default function ClipboardApp() {
   }, [activeIdx])
 
   return (
-    <div className="h-screen flex flex-col bg-stone-50 text-stone-900 border border-stone-300">
-      {/* 타이틀바: 드래그 가능 + 윈도우 컨트롤 */}
-      <div className="drag-region flex items-center justify-between h-8 px-2.5 border-b border-stone-200 bg-white">
-        <div className="flex items-center gap-1.5 text-[11px] text-stone-500">
-          <ClipIcon className="w-3 h-3" />
-          <span>클립보드</span>
-        </div>
-        <WindowControls
-          variant="light"
-          onClose={() => window.oasis?.clipboardHide()}
-        />
-      </div>
+    <div className="h-full w-full flex flex-col bg-stone-50 text-stone-900">
+      <header className="px-8 py-5 border-b border-stone-200 bg-white shrink-0">
+        <p className="eyebrow">클립보드</p>
+        <h1 className="text-xl font-semibold tracking-tight mt-1">복사 히스토리</h1>
+      </header>
 
       {/* 검색 바 */}
-      <div className="no-drag flex items-center gap-2 px-3 py-2.5 border-b border-stone-200 bg-white">
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-stone-200 bg-white">
         <Search className="w-4 h-4 text-stone-400 shrink-0" />
         <input
           ref={inputRef}
@@ -169,8 +162,7 @@ export default function ClipboardApp() {
       <div className="flex items-center justify-between px-3 py-1.5 border-t border-stone-200 bg-white text-[10px] text-stone-500">
         <div className="flex items-center gap-3">
           <span><kbd className="font-mono">↑↓</kbd> 선택</span>
-          <span><kbd className="font-mono">↵</kbd> 붙여넣기</span>
-          <span><kbd className="font-mono">Esc</kbd> 닫기</span>
+          <span><kbd className="font-mono">↵</kbd> 붙여넣기 (검색 포커스 시)</span>
         </div>
         <button
           onClick={() => window.oasis?.clipboardClear()}

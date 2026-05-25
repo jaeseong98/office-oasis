@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, FolderOpen, ExternalLink, X, Plus, Sparkles, Layers, FileText, ClipboardCopy, Settings } from 'lucide-react'
 import LauncherApp from './Launcher.jsx'
 import NotesApp from './Notes.jsx'
+import ClipboardApp from './Clipboard.jsx'
 
 const TABS = [
-  { id: 'cleanup',  label: '청소',   Icon: Sparkles },
-  { id: 'launcher', label: '런처',   Icon: Layers },
-  { id: 'notes',    label: '노트',   Icon: FileText },
+  { id: 'cleanup',   label: '청소',     Icon: Sparkles },
+  { id: 'launcher',  label: '런처',     Icon: Layers },
+  { id: 'notes',     label: '노트',     Icon: FileText },
+  { id: 'clipboard', label: '클립보드', Icon: ClipboardCopy },
 ]
 
 /* ───────── 유틸 ───────── */
@@ -300,15 +302,7 @@ export default function App() {
             )
           })}
         </nav>
-        <div className="p-2 border-t border-stone-200 space-y-1">
-          <button
-            onClick={() => window.oasis?.openClipboard()}
-            className="w-full py-2.5 flex flex-col items-center gap-1 text-stone-500 hover:text-stone-900 hover:bg-stone-50"
-            title="Ctrl+Shift+V"
-          >
-            <ClipboardCopy className="w-4 h-4" strokeWidth={1.6} />
-            <span className="text-[10px]">클립보드</span>
-          </button>
+        <div className="p-2 border-t border-stone-200">
           <button
             onClick={() => setShowSettings(true)}
             className="w-full py-2.5 flex flex-col items-center gap-1 text-stone-500 hover:text-stone-900 hover:bg-stone-50"
@@ -392,6 +386,7 @@ export default function App() {
         )}
         {activeTab === 'launcher' && <LauncherApp />}
         {activeTab === 'notes' && <NotesApp />}
+        {activeTab === 'clipboard' && <ClipboardApp />}
       </div>
 
       {toast && (

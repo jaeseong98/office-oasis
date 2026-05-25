@@ -60,6 +60,10 @@ contextBridge.exposeInMainWorld('oasis', {
   notesCreate: () => ipcRenderer.invoke('notes:create'),
   notesSave: (id, body) => ipcRenderer.invoke('notes:save', { id, body }),
   notesDelete: (id) => ipcRenderer.invoke('notes:delete', id),
+  notesRestore: (id) => ipcRenderer.invoke('notes:restore', id),
+  notesPurge: (id) => ipcRenderer.invoke('notes:purge', id),
+  notesExport: () => ipcRenderer.invoke('notes:export'),
+  notesImport: () => ipcRenderer.invoke('notes:import'),
   onNotesUpdate: (cb) => {
     const handler = (_e, list) => cb(list)
     ipcRenderer.on('notes:update', handler)

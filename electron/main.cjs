@@ -20,7 +20,6 @@ const crypto = require('node:crypto')
 const { autoUpdater } = require('electron-updater')
 
 let mainWindow = null
-let clipboardWindow = null
 let tray = null
 let scanState = { running: false, cancelToken: 0 }
 
@@ -410,8 +409,8 @@ function saveClipboardHistory() {
 }
 
 function broadcastClipboard() {
-  if (clipboardWindow && !clipboardWindow.isDestroyed()) {
-    clipboardWindow.webContents.send('clipboard:update', clipboardHistory)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('clipboard:update', clipboardHistory)
   }
 }
 
@@ -444,75 +443,9 @@ function startClipboardPolling() {
   }, CLIPBOARD_POLL_MS)
 }
 
-/* ───────── 클립보드 팝업 창 ───────── */
-
-function createClipboardWindow() {
-  clipboardWindow = new BrowserWindow({
-    width: 480,
-    height: 560,
-    minWidth: 360,
-    minHeight: 320,
-    frame: false,
-    resizable: true,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    show: false,
-    backgroundColor: '#fafaf9',
-    icon: path.join(__dirname, 'assets', 'icon.png'),
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    },
-  })
-
-  clipboardWindow.loadURL(rendererURL('clipboard'))
-  attachDevToolsShortcut(clipboardWindow)
-
-  // 창이 처음 만들어질 때는 React가 마운트되기 전이라 즉시 send 하면 메시지 유실.
-  // 렌더러가 준비된 다음 한 번 더 보내준다.
-  clipboardWindow.webContents.once('did-finish-load', () => {
-    if (clipboardWindow && !clipboardWindow.isDestroyed()) {
-      clipboardWindow.webContents.send('clipboard:update', clipboardHistory)
-    }
-  })
-
-  clipboardWindow.on('blur', () => {
-    if (!clipboardWindow.isDestroyed() && !clipboardWindow.webContents.isDevToolsOpened()) {
-      clipboardWindow.hide()
-    }
-  })
-
-  clipboardWindow.on('closed', () => { clipboardWindow = null })
-}
-
-function showClipboardNearCursor() {
-  if (!clipboardWindow || clipboardWindow.isDestroyed()) createClipboardWindow()
-  const cursor = screen.getCursorScreenPoint()
-  const display = screen.getDisplayNearestPoint(cursor)
-  const W = 480, H = 540
-  const x = Math.min(
-    Math.max(cursor.x - 100, display.workArea.x + 8),
-    display.workArea.x + display.workArea.width - W - 8,
-  )
-  const y = Math.min(
-    Math.max(cursor.y, display.workArea.y + 8),
-    display.workArea.y + display.workArea.height - H - 8,
-  )
-  clipboardWindow.setPosition(x, y)
-  clipboardWindow.show()
-  clipboardWindow.focus()
-  clipboardWindow.webContents.send('clipboard:update', clipboardHistory)
-}
-
-function toggleClipboardWindow() {
-  if (clipboardWindow && !clipboardWindow.isDestroyed() && clipboardWindow.isVisible()) {
-    clipboardWindow.hide()
-  } else {
-    showClipboardNearCursor()
-  }
-}
+// 클립보드는 메인 앱 탭으로 통합. 별도 창 없음.
+function showClipboardNearCursor() { showMainWithTab('clipboard') }
+function toggleClipboardWindow() { showMainWithTab('clipboard') }
 
 /* ───────── 클립보드 IPC ───────── */
 
@@ -555,7 +488,7 @@ ipcMain.handle('clipboard:clear', () => {
 })
 
 ipcMain.handle('clipboard:hide', () => {
-  if (clipboardWindow && !clipboardWindow.isDestroyed()) clipboardWindow.hide()
+  // 탭으로 통합되었으므로 hide 동작은 더 이상 의미 없음 (no-op)
   return { ok: true }
 })
 
@@ -664,11 +597,110 @@ ipcMain.handle('notes:save', (_e, payload) => {
   return { ok: true }
 })
 
+// 소프트 삭제 — deleted_at 만 찍고 30일 뒤 자동 영구 삭제
 ipcMain.handle('notes:delete', (_e, id) => {
+  const n = notes.find(x => x.id === id)
+  if (!n) return { ok: false }
+  n.deleted_at = Date.now()
+  saveNotes()
+  broadcastNotes()
+  return { ok: true }
+})
+
+ipcMain.handle('notes:restore', (_e, id) => {
+  const n = notes.find(x => x.id === id)
+  if (!n) return { ok: false }
+  delete n.deleted_at
+  saveNotes()
+  broadcastNotes()
+  return { ok: true }
+})
+
+ipcMain.handle('notes:purge', (_e, id) => {
   notes = notes.filter(n => n.id !== id)
   saveNotes()
   broadcastNotes()
   return { ok: true }
+})
+
+/* ───────── 노트 백업·내보내기·불러오기 ───────── */
+
+function notesBackupDir() {
+  return path.join(app.getPath('userData'), 'notes-backups')
+}
+
+function backupNotesDaily() {
+  try {
+    const dir = notesBackupDir()
+    fs.mkdirSync(dir, { recursive: true })
+    const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+    const file = path.join(dir, `notes-${today}.json`)
+    if (!fs.existsSync(file)) {
+      fs.writeFileSync(file, JSON.stringify(notes))
+    }
+    // 14일 넘은 백업 회전
+    const all = fs.readdirSync(dir).filter(f => f.startsWith('notes-') && f.endsWith('.json'))
+    if (all.length > 14) {
+      all.sort()
+      for (const f of all.slice(0, all.length - 14)) {
+        try { fs.unlinkSync(path.join(dir, f)) } catch { /* ignore */ }
+      }
+    }
+  } catch (err) {
+    console.error('[oasis] notes backup failed:', err)
+  }
+}
+
+function purgeExpiredDeletedNotes() {
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
+  const before = notes.length
+  notes = notes.filter(n => !n.deleted_at || n.deleted_at > cutoff)
+  if (notes.length !== before) saveNotes()
+}
+
+ipcMain.handle('notes:export', async () => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: '노트 내보내기',
+    defaultPath: `oasis-notes-${new Date().toISOString().slice(0, 10)}.json`,
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  })
+  if (result.canceled || !result.filePath) return { canceled: true }
+  try {
+    fs.writeFileSync(result.filePath, JSON.stringify(notes, null, 2))
+    return { ok: true, path: result.filePath, count: notes.length }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+})
+
+ipcMain.handle('notes:import', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '노트 가져오기',
+    properties: ['openFile'],
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  })
+  if (result.canceled || !result.filePaths.length) return { canceled: true }
+  try {
+    const raw = fs.readFileSync(result.filePaths[0], 'utf8')
+    const imported = JSON.parse(raw)
+    if (!Array.isArray(imported)) throw new Error('JSON 배열이 아닙니다')
+    let count = 0
+    for (const n of imported) {
+      if (!n || typeof n.body !== 'string') continue
+      notes.unshift({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}-imp${count}`,
+        body: n.body,
+        updatedAt: n.updatedAt || Date.now(),
+        createdAt: n.createdAt || Date.now(),
+      })
+      count++
+    }
+    saveNotes()
+    broadcastNotes()
+    return { ok: true, count }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
 })
 
 /* ───────── 설치된 앱 검색 (Windows 시작메뉴) ───────── */
@@ -1089,6 +1121,8 @@ app.whenReady().then(() => {
   loadClipboardHistory()
   loadLauncherTiles()
   loadNotes()
+  purgeExpiredDeletedNotes()
+  backupNotesDaily()
   startClipboardPolling()
   createTray()
   createWindow()
