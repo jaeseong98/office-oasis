@@ -14,8 +14,6 @@ function loadZoom() {
   return ZOOM_DEFAULT
 }
 
-/* ───────── 카테고리 색 ───────── */
-
 const CAT_COLORS = {
   all:      '#94a3b8',
   favorite: '#f59e0b',
@@ -30,9 +28,9 @@ function shortHost(url) {
   try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url }
 }
 
-/* ───────── 카루셀 카드 ───────── */
+/* ───────── 카드 ───────── */
 
-function CarouselCard({ tile, index, total, ringRotRef, isPausedRef, onLaunch, onContextMenu }) {
+function CarouselCard({ tile, index, total, ringRotRef, dragRef, onLaunch, onContextMenu }) {
   const meshRef = useRef()
   const [hovered, setHovered] = useState(false)
 
@@ -42,13 +40,10 @@ function CarouselCard({ tile, index, total, ringRotRef, isPausedRef, onLaunch, o
   useFrame((_, delta) => {
     if (!meshRef.current) return
     const angle = baseAngle + ringRotRef.current
-    const x = Math.sin(angle) * R
-    const z = Math.cos(angle) * R
-    meshRef.current.position.x = x
-    meshRef.current.position.z = z
-    meshRef.current.rotation.y = angle  // 카드가 바깥쪽 향함
+    meshRef.current.position.x = Math.sin(angle) * R
+    meshRef.current.position.z = Math.cos(angle) * R
+    meshRef.current.rotation.y = angle
 
-    // 호버 시 살짝 확대 + 앞으로 떠오르기
     const targetScale = hovered ? 1.12 : 1
     const k = Math.min(1, delta * 10)
     const cur = meshRef.current.scale.x
@@ -58,20 +53,29 @@ function CarouselCard({ tile, index, total, ringRotRef, isPausedRef, onLaunch, o
 
   const catColor = CAT_COLORS[tile.category] || CAT_COLORS.app
 
+  function handleClick(e) {
+    e.stopPropagation()
+    // 드래그한 거면 실행 안 함
+    if (dragRef.current?.didMove) return
+    onLaunch(tile)
+  }
+
   return (
-    <group
-      ref={meshRef}
-      onPointerOver={(e) => { e.stopPropagation(); setHovered(true); isPausedRef.current = true; document.body.style.cursor = 'pointer' }}
-      onPointerOut={() => { setHovered(false); isPausedRef.current = false; document.body.style.cursor = 'auto' }}
-      onClick={(e) => { e.stopPropagation(); onLaunch(tile) }}
-      onContextMenu={(e) => { e.stopPropagation(); onContextMenu?.(tile, e) }}
-    >
-      {/* 베이스 카드 — 카테고리 색의 컬러풀 라운드 박스 */}
-      <RoundedBox args={[1.3, 1.5, 0.08]} radius={0.12} smoothness={4} castShadow receiveShadow>
+    <group ref={meshRef}>
+      <RoundedBox
+        args={[1.3, 1.5, 0.08]}
+        radius={0.12}
+        smoothness={4}
+        castShadow
+        receiveShadow
+        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer' }}
+        onPointerOut={() => { setHovered(false); document.body.style.cursor = 'auto' }}
+        onClick={handleClick}
+        onContextMenu={(e) => { e.stopPropagation(); onContextMenu?.(tile, e.nativeEvent || e) }}
+      >
         <meshStandardMaterial color={catColor} roughness={0.45} metalness={0.15} />
       </RoundedBox>
 
-      {/* 컨텐츠 (아이콘 + 라벨) */}
       <Html
         center
         transform
@@ -123,29 +127,20 @@ function CarouselCard({ tile, index, total, ringRotRef, isPausedRef, onLaunch, o
   )
 }
 
-/* ───────── 링 (자동 회전) ───────── */
+/* ───────── 링 (드래그로 회전) ───────── */
 
-function Ring({ tiles, onLaunch, onContextMenu }) {
-  const ringRotRef = useRef(0)
-  const isPausedRef = useRef(false)
-  const groupRef = useRef()
-
-  useFrame((state, delta) => {
-    // 자동 회전 (호버 중엔 정지)
-    if (!isPausedRef.current) {
-      ringRotRef.current += delta * 0.18
-    }
-    // 마우스 Y에 따라 살짝 위·아래로 틸트
-    if (groupRef.current) {
-      const targetX = -state.mouse.y * 0.12
-      groupRef.current.rotation.x = THREE.MathUtils.lerp(
-        groupRef.current.rotation.x, targetX, Math.min(1, delta * 3),
-      )
-    }
+function Ring({ tiles, ringRotRef, targetRotRef, dragRef, onLaunch, onContextMenu }) {
+  useFrame((_, delta) => {
+    // target 으로 부드럽게 따라감
+    ringRotRef.current = THREE.MathUtils.lerp(
+      ringRotRef.current,
+      targetRotRef.current,
+      Math.min(1, delta * 6),
+    )
   })
 
   return (
-    <group ref={groupRef} position={[0, 0, 0]}>
+    <group>
       {tiles.map((tile, i) => (
         <CarouselCard
           key={tile.id}
@@ -153,7 +148,7 @@ function Ring({ tiles, onLaunch, onContextMenu }) {
           index={i}
           total={tiles.length}
           ringRotRef={ringRotRef}
-          isPausedRef={isPausedRef}
+          dragRef={dragRef}
           onLaunch={onLaunch}
           onContextMenu={onContextMenu}
         />
@@ -162,7 +157,7 @@ function Ring({ tiles, onLaunch, onContextMenu }) {
   )
 }
 
-/* ───────── 카메라 줌 컨트롤 ───────── */
+/* ───────── 카메라 줌 ───────── */
 
 function CameraZoom({ targetZ }) {
   const { camera } = useThree()
@@ -179,6 +174,9 @@ export default function Launcher3D({ tiles, onLaunch, onContextMenu }) {
   const [zoom, setZoom] = useState(loadZoom)
   const [showHint, setShowHint] = useState(false)
   const hintTimerRef = useRef(null)
+  const dragRef = useRef({ active: false, startX: 0, lastX: 0, didMove: false })
+  const targetRotRef = useRef(0)
+  const ringRotRef = useRef(0)
 
   useEffect(() => {
     try { localStorage.setItem(ZOOM_KEY, String(zoom)) } catch { /* ignore */ }
@@ -195,15 +193,41 @@ export default function Launcher3D({ tiles, onLaunch, onContextMenu }) {
     hintTimerRef.current = setTimeout(() => setShowHint(false), 900)
   }
 
-  // fog 범위도 카메라 거리에 맞춰 조정 — 줌 멀어지면 fog도 멀게
+  // 드래그 — 좌우로 끌면 링 회전
+  function onPointerDown(e) {
+    if (e.button !== 0) return
+    dragRef.current = { active: true, startX: e.clientX, lastX: e.clientX, didMove: false }
+  }
+  function onPointerMove(e) {
+    if (!dragRef.current.active) return
+    const dx = e.clientX - dragRef.current.lastX
+    if (Math.abs(e.clientX - dragRef.current.startX) > 4) {
+      dragRef.current.didMove = true
+    }
+    // 픽셀 → 라디안 변환 (감도)
+    targetRotRef.current += dx * 0.006
+    dragRef.current.lastX = e.clientX
+  }
+  function onPointerUp() {
+    // didMove 는 다음 onClick 에서 카드가 읽고 나서 자연스럽게 리셋됨 (다음 pointerdown 까지 유지)
+    dragRef.current.active = false
+  }
+
   const fogNear = zoom - 0.5
   const fogFar  = zoom + 4.5
 
   return (
     <div
       className="w-full h-full relative"
-      style={{ background: 'radial-gradient(ellipse at 50% 30%, #ffffff 0%, #f5f5f4 60%, #e7e5e4 100%)' }}
+      style={{
+        background: 'radial-gradient(ellipse at 50% 30%, #ffffff 0%, #f5f5f4 60%, #e7e5e4 100%)',
+        cursor: dragRef.current.active ? 'grabbing' : 'grab',
+      }}
       onWheel={handleWheel}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerUp}
     >
       <Canvas
         camera={{ position: [0, 0.8, ZOOM_DEFAULT], fov: 45 }}
@@ -217,15 +241,20 @@ export default function Launcher3D({ tiles, onLaunch, onContextMenu }) {
         <directionalLight position={[-4, -2, 3]} intensity={0.22} color="#fde68a" />
 
         <CameraZoom targetZ={zoom} />
-        <Ring tiles={tiles} onLaunch={onLaunch} onContextMenu={onContextMenu} />
+        <Ring
+          tiles={tiles}
+          ringRotRef={ringRotRef}
+          targetRotRef={targetRotRef}
+          dragRef={dragRef}
+          onLaunch={onLaunch}
+          onContextMenu={onContextMenu}
+        />
       </Canvas>
 
-      {/* 안내 텍스트 */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[11px] text-stone-400 pointer-events-none tracking-wider">
-        호버 = 회전 정지 · 클릭 = 실행 · <span className="font-mono">Ctrl + Scroll</span> = 줌
+        좌우 드래그 = 회전 · 클릭 = 실행 · <span className="font-mono">Ctrl + Scroll</span> = 줌
       </div>
 
-      {/* 줌 표시 (휠 사용 시 잠깐 표시) */}
       {showHint && (
         <div className="absolute top-4 right-4 px-2.5 py-1 bg-stone-900/80 text-white text-[11px] tnum rounded pointer-events-none">
           줌 {(zoom).toFixed(1)}
