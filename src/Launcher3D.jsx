@@ -26,7 +26,7 @@ function CarouselCard({ tile, index, total, ringRotRef, isPausedRef, onLaunch, o
   const [hovered, setHovered] = useState(false)
 
   const baseAngle = (index / total) * Math.PI * 2
-  const R = total <= 6 ? 3.6 : 4.4
+  const R = total <= 6 ? 2.6 : 3.4
 
   useFrame((_, delta) => {
     if (!meshRef.current) return
@@ -56,7 +56,7 @@ function CarouselCard({ tile, index, total, ringRotRef, isPausedRef, onLaunch, o
       onContextMenu={(e) => { e.stopPropagation(); onContextMenu?.(tile, e) }}
     >
       {/* 베이스 카드 — 카테고리 색의 컬러풀 라운드 박스 */}
-      <RoundedBox args={[1.9, 2.1, 0.1]} radius={0.16} smoothness={4} castShadow receiveShadow>
+      <RoundedBox args={[1.3, 1.5, 0.08]} radius={0.12} smoothness={4} castShadow receiveShadow>
         <meshStandardMaterial color={catColor} roughness={0.45} metalness={0.15} />
       </RoundedBox>
 
@@ -64,45 +64,45 @@ function CarouselCard({ tile, index, total, ringRotRef, isPausedRef, onLaunch, o
       <Html
         center
         transform
-        position={[0, 0, 0.06]}
-        distanceFactor={4}
+        position={[0, 0, 0.05]}
+        distanceFactor={6}
         style={{ pointerEvents: 'none', userSelect: 'none' }}
       >
         <div style={{
-          width: 280, height: 310,
+          width: 220, height: 250,
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          padding: 20, color: '#ffffff', textAlign: 'center',
+          padding: 16, color: '#ffffff', textAlign: 'center',
         }}>
           {tile.iconDataUrl ? (
             <div style={{
-              width: 124, height: 124, marginBottom: 22,
-              background: 'rgba(255,255,255,0.96)', borderRadius: 22,
+              width: 96, height: 96, marginBottom: 16,
+              background: 'rgba(255,255,255,0.96)', borderRadius: 18,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+              boxShadow: '0 6px 18px rgba(0,0,0,0.22)',
             }}>
-              <img src={tile.iconDataUrl} alt="" style={{ width: 96, height: 96, objectFit: 'contain' }} />
+              <img src={tile.iconDataUrl} alt="" style={{ width: 72, height: 72, objectFit: 'contain' }} />
             </div>
           ) : (
             <div style={{
-              width: 124, height: 124, marginBottom: 22,
-              fontSize: 64, fontWeight: 700, color: 'white',
+              width: 96, height: 96, marginBottom: 16,
+              fontSize: 50, fontWeight: 700, color: 'white',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(255,255,255,0.16)', borderRadius: 22,
+              background: 'rgba(255,255,255,0.16)', borderRadius: 18,
             }}>
               {(tile.title || '?').trim().charAt(0).toUpperCase()}
             </div>
           )}
           <p style={{
-            fontSize: 24, fontWeight: 700, margin: 0, lineHeight: 1.15,
+            fontSize: 20, fontWeight: 700, margin: 0, lineHeight: 1.15,
             maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            textShadow: '0 2px 12px rgba(0,0,0,0.35)',
+            textShadow: '0 2px 10px rgba(0,0,0,0.35)',
           }}>
             {tile.title}
           </p>
           <p style={{
-            fontSize: 15, color: 'rgba(255,255,255,0.85)', margin: '8px 0 0',
+            fontSize: 12, color: 'rgba(255,255,255,0.85)', margin: '6px 0 0',
             fontFamily: 'ui-monospace, Consolas, monospace',
-            textShadow: '0 2px 8px rgba(0,0,0,0.3)',
+            textShadow: '0 2px 6px rgba(0,0,0,0.3)',
           }}>
             {tile.type === 'url' ? shortHost(tile.target) : (tile.category || '앱')}
           </p>
@@ -159,13 +159,13 @@ export default function Launcher3D({ tiles, onLaunch, onContextMenu }) {
       background: 'radial-gradient(ellipse at 50% 30%, #ffffff 0%, #f5f5f4 60%, #e7e5e4 100%)',
     }}>
       <Canvas
-        camera={{ position: [0, 1.4, 5.6], fov: 50 }}
+        camera={{ position: [0, 0.8, 7.5], fov: 45 }}
         dpr={[1, 2]}
         gl={{ antialias: true, alpha: true }}
         shadows
       >
         {/* fog — 뒤쪽 카드를 부드럽게 페이드 (DOF 흉내) */}
-        <fog attach="fog" args={['#fafaf9', 5.5, 10]} />
+        <fog attach="fog" args={['#fafaf9', 7, 12]} />
 
         {/* 라이팅 */}
         <ambientLight intensity={0.65} />
