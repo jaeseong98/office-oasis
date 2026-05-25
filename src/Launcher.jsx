@@ -7,7 +7,6 @@ import {
 
 // 3D 모드 켤 때만 Three.js 로드 (코드 스플리팅)
 const Launcher3D = lazy(() => import('./Launcher3D.jsx'))
-const LauncherSpline = lazy(() => import('./LauncherSpline.jsx'))
 
 const VIEW_KEY = 'oasis:launcher-view'
 
@@ -192,13 +191,6 @@ export default function LauncherApp() {
           >
             <Box className="w-3 h-3" /> 3D
           </button>
-          <button
-            onClick={() => setViewMode('spline')}
-            className={`px-2.5 py-1.5 text-xs border-l border-stone-200 ${viewMode === 'spline' ? 'bg-stone-900 text-white' : 'text-stone-500 hover:text-stone-900'}`}
-            title="Spline 씬"
-          >
-            Spline
-          </button>
         </div>
 
         <button
@@ -232,14 +224,6 @@ export default function LauncherApp() {
               onLaunch={(t) => launch(t)}
               onContextMenu={(t, e) => setContextMenu({ x: e.clientX, y: e.clientY, tile: t })}
             />
-          </Suspense>
-        ) : viewMode === 'spline' ? (
-          <Suspense fallback={
-            <div className="h-full flex items-center justify-center text-stone-400">
-              <p className="text-sm">Spline 로딩 중…</p>
-            </div>
-          }>
-            <LauncherSpline tiles={filtered} onLaunch={launch} />
           </Suspense>
         ) : (
           <div className="h-full overflow-auto thin-scroll">
