@@ -82,4 +82,16 @@ contextBridge.exposeInMainWorld('oasis', {
   winHide: () => ipcRenderer.invoke('win:hide'),
   winIsMaximized: () => ipcRenderer.invoke('win:is-maximized'),
   winToggleFullscreen: () => ipcRenderer.invoke('win:toggle-fullscreen'),
+
+  // ─── 설정 ───
+  getAutoLaunch: () => ipcRenderer.invoke('settings:get-auto-launch'),
+  setAutoLaunch: (payload) => ipcRenderer.invoke('settings:set-auto-launch', payload),
+  appVersion: undefined, // 동기 접근용 — preload에선 IPC가 비동기이므로 별도 처리
+})
+
+// 버전을 동기로 노출하기 위해 별도 호출
+ipcRenderer.invoke('app:get-version').then((v) => {
+  try {
+    Object.defineProperty(window.oasis, 'appVersion', { value: v, writable: false })
+  } catch { /* ignore */ }
 })

@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, FolderOpen, ExternalLink, X, Plus, Sparkles, Layers, FileText, ClipboardCopy, Users } from 'lucide-react'
+import { ChevronRight, FolderOpen, ExternalLink, X, Plus, Sparkles, Layers, FileText, ClipboardCopy, Settings } from 'lucide-react'
 import LauncherApp from './Launcher.jsx'
 import NotesApp from './Notes.jsx'
-import TeamApp from './Team.jsx'
 
 const TABS = [
   { id: 'cleanup',  label: '청소',   Icon: Sparkles },
   { id: 'launcher', label: '런처',   Icon: Layers },
   { id: 'notes',    label: '노트',   Icon: FileText },
-  { id: 'team',     label: '팀',     Icon: Users },
 ]
 
 /* ───────── 유틸 ───────── */
@@ -46,6 +44,7 @@ const CATS = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('cleanup')
+  const [showSettings, setShowSettings] = useState(false)
   const [isElectron, setIsElectron] = useState(false)
   const [roots, setRoots] = useState([])
   const [progress, setProgress] = useState(null)
@@ -301,7 +300,7 @@ export default function App() {
             )
           })}
         </nav>
-        <div className="p-2 border-t border-stone-200">
+        <div className="p-2 border-t border-stone-200 space-y-1">
           <button
             onClick={() => window.oasis?.openClipboard()}
             className="w-full py-2.5 flex flex-col items-center gap-1 text-stone-500 hover:text-stone-900 hover:bg-stone-50"
@@ -309,6 +308,14 @@ export default function App() {
           >
             <ClipboardCopy className="w-4 h-4" strokeWidth={1.6} />
             <span className="text-[10px]">클립보드</span>
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="w-full py-2.5 flex flex-col items-center gap-1 text-stone-500 hover:text-stone-900 hover:bg-stone-50"
+            title="설정"
+          >
+            <Settings className="w-4 h-4" strokeWidth={1.6} />
+            <span className="text-[10px]">설정</span>
           </button>
         </div>
       </aside>
@@ -385,7 +392,6 @@ export default function App() {
         )}
         {activeTab === 'launcher' && <LauncherApp />}
         {activeTab === 'notes' && <NotesApp />}
-        {activeTab === 'team' && <TeamApp />}
       </div>
 
       {toast && (
@@ -396,6 +402,8 @@ export default function App() {
           {toast.msg}
         </div>
       )}
+
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
 
       {confirming && (
         <ConfirmDeleteModal
@@ -412,6 +420,85 @@ export default function App() {
 }
 
 /* ───────── 삭제 확인 모달 ───────── */
+
+function SettingsModal({ onClose }) {
+  const [autoLaunch, setAutoLaunch] = useState(false)
+  const [hiddenStart, setHiddenStart] = useState(true)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!window.oasis?.getAutoLaunch) { setLoading(false); return }
+    window.oasis.getAutoLaunch().then((s) => {
+      setAutoLaunch(!!s.enabled)
+      setHiddenStart(s.asHidden !== false)
+      setLoading(false)
+    })
+  }, [])
+
+  async function changeAutoLaunch(v) {
+    setAutoLaunch(v)
+    await window.oasis?.setAutoLaunch({ enabled: v, asHidden: hiddenStart })
+  }
+  async function changeHidden(v) {
+    setHiddenStart(v)
+    await window.oasis?.setAutoLaunch({ enabled: autoLaunch, asHidden: v })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center" onMouseDown={onClose}>
+      <div className="bg-white border border-stone-200 shadow-xl max-w-md w-full mx-4" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="px-6 pt-6 pb-3 flex items-center justify-between">
+          <div>
+            <p className="eyebrow">설정</p>
+            <h3 className="text-lg font-semibold mt-1.5">Office Oasis</h3>
+          </div>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-900">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="px-6 pb-2 space-y-1">
+          <SettingRow
+            title="Windows 시작 시 자동 실행"
+            desc="부팅 후 트레이에 자동 상주합니다."
+            checked={autoLaunch}
+            disabled={loading}
+            onChange={changeAutoLaunch}
+          />
+          <SettingRow
+            title="시작 시 창 숨김"
+            desc="자동 실행 시 메인 창은 안 띄우고 트레이 아이콘만. (위 옵션 켜져 있을 때만)"
+            checked={hiddenStart}
+            disabled={loading || !autoLaunch}
+            onChange={changeHidden}
+          />
+        </div>
+
+        <div className="px-6 py-4 border-t border-stone-200 text-[11px] text-stone-400 font-mono">
+          v{(window.oasis?.appVersion) || '?'}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SettingRow({ title, desc, checked, disabled, onChange }) {
+  return (
+    <label className={`flex items-start justify-between gap-4 py-3 ${disabled ? 'opacity-40' : 'cursor-pointer'}`}>
+      <div>
+        <p className="text-sm font-medium">{title}</p>
+        <p className="text-xs text-stone-500 mt-0.5 leading-relaxed">{desc}</p>
+      </div>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="accent-stone-900 w-4 h-4 mt-1 shrink-0 cursor-pointer"
+      />
+    </label>
+  )
+}
 
 function ConfirmDeleteModal({ state, onChange, onCancel, onConfirm, totalSize, totalCount }) {
   const isPermanent = state.permanent

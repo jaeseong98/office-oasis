@@ -571,6 +571,26 @@ ipcMain.handle('ui:open-launcher', () => { showLauncher(); return { ok: true } }
 ipcMain.handle('ui:open-clipboard', () => { showClipboardNearCursor(); return { ok: true } })
 ipcMain.handle('ui:open-notes', () => { showNotes(); return { ok: true } })
 
+/* ───────── 설정: 시작 프로그램 등록 ───────── */
+
+ipcMain.handle('settings:get-auto-launch', () => {
+  const s = app.getLoginItemSettings()
+  return { enabled: !!s.openAtLogin, asHidden: !!s.openAsHidden || (s.args || []).includes('--hidden') }
+})
+
+ipcMain.handle('settings:set-auto-launch', (_e, payload) => {
+  const enabled = !!payload?.enabled
+  const asHidden = payload?.asHidden !== false
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    openAsHidden: asHidden, // macOS
+    args: enabled && asHidden ? ['--hidden'] : [],
+  })
+  return { ok: true }
+})
+
+ipcMain.handle('app:get-version', () => app.getVersion())
+
 /* ───────── 윈도우 컨트롤 (custom titlebar용) ───────── */
 
 function ownerWindow(event) {
@@ -983,6 +1003,7 @@ function createTray() {
 /* ───────── 윈도우 부트스트랩 ───────── */
 
 function createWindow() {
+  const startHidden = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAsHidden
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -991,6 +1012,7 @@ function createWindow() {
     backgroundColor: '#fafaf9',
     title: 'Office Oasis · 데스크톱 어시스턴트',
     autoHideMenuBar: true,
+    show: !startHidden,
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
