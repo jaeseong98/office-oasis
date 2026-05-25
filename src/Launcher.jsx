@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, Suspense, lazy } from 'react'
 import {
   Plus, Search, X,
   Star, Gamepad2, Globe, Wrench, Music, Sparkles,
-  FolderOpen, FileText, MonitorPlay, Pencil,
+  FolderOpen, FileText, MonitorPlay, Pencil, Box,
 } from 'lucide-react'
+
+// 3D 모드 켤 때만 Three.js 로드 (코드 스플리팅)
+const Launcher3D = lazy(() => import('./Launcher3D.jsx'))
+
+const VIEW_KEY = 'oasis:launcher-view'
 
 /* ───────── 카테고리 — 라이트 테마에서도 잘 보이는 절제된 액센트 ───────── */
 
@@ -52,8 +57,11 @@ export default function LauncherApp() {
   const [editing, setEditing] = useState(null)
   const [contextMenu, setContextMenu] = useState(null)
   const [dragOver, setDragOver] = useState(false)
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem(VIEW_KEY) || '2d')
   const now = useClock()
   const dropAreaRef = useRef(null)
+
+  useEffect(() => { try { localStorage.setItem(VIEW_KEY, viewMode) } catch {} }, [viewMode])
 
   useEffect(() => {
     if (!window.oasis?.isElectron) return
@@ -168,6 +176,23 @@ export default function LauncherApp() {
           />
         </div>
 
+        <div className="flex items-center border border-stone-200 shrink-0">
+          <button
+            onClick={() => setViewMode('2d')}
+            className={`px-2.5 py-1.5 text-xs ${viewMode === '2d' ? 'bg-stone-900 text-white' : 'text-stone-500 hover:text-stone-900'}`}
+            title="2D 그리드"
+          >
+            2D
+          </button>
+          <button
+            onClick={() => setViewMode('3d')}
+            className={`px-2.5 py-1.5 text-xs flex items-center gap-1 ${viewMode === '3d' ? 'bg-stone-900 text-white' : 'text-stone-500 hover:text-stone-900'}`}
+            title="3D 공간"
+          >
+            <Box className="w-3 h-3" /> 3D
+          </button>
+        </div>
+
         <button
           onClick={() => setShowAdd(true)}
           className="px-3.5 py-1.5 bg-stone-900 hover:bg-stone-800 text-white text-xs font-medium flex items-center gap-1.5 shrink-0"
@@ -176,35 +201,53 @@ export default function LauncherApp() {
         </button>
       </header>
 
-      {/* 메인 그리드 */}
-      <main className="flex-1 overflow-auto thin-scroll">
-        <div className="max-w-7xl mx-auto px-10 py-10">
-          {tiles.length === 0 ? (
-            <EmptyHint onAdd={() => setShowAdd(true)} />
-          ) : filtered.length === 0 ? (
-            <div className="text-center py-24 text-stone-400">
-              <p className="text-sm">{query ? '검색 결과 없음' : '이 카테고리에는 타일이 없습니다'}</p>
+      {/* 메인 그리드 — 2D 또는 3D */}
+      <main className="flex-1 overflow-hidden relative">
+        {tiles.length === 0 ? (
+          <div className="h-full overflow-auto thin-scroll">
+            <div className="max-w-7xl mx-auto px-10 py-10">
+              <EmptyHint onAdd={() => setShowAdd(true)} />
             </div>
-          ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3">
-              {filtered.map((tile) => (
-                <Tile
-                  key={tile.id}
-                  tile={tile}
-                  onLaunch={() => launch(tile)}
-                  onContextMenu={(e) => {
-                    e.preventDefault()
-                    setContextMenu({ x: e.clientX, y: e.clientY, tile })
-                  }}
-                />
-              ))}
-              <AddTile onClick={() => setShowAdd(true)} />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-stone-400">
+            <p className="text-sm">{query ? '검색 결과 없음' : '이 카테고리에는 타일이 없습니다'}</p>
+          </div>
+        ) : viewMode === '3d' ? (
+          <Suspense fallback={
+            <div className="h-full flex items-center justify-center text-stone-400">
+              <p className="text-sm">3D 엔진 로딩 중…</p>
             </div>
-          )}
-        </div>
+          }>
+            <Launcher3D
+              tiles={filtered}
+              onLaunch={(t) => launch(t)}
+              onContextMenu={(t, e) => setContextMenu({ x: e.clientX, y: e.clientY, tile: t })}
+            />
+          </Suspense>
+        ) : (
+          <div className="h-full overflow-auto thin-scroll">
+            <div className="max-w-7xl mx-auto px-10 py-10">
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3">
+                {filtered.map((tile) => (
+                  <Tile
+                    key={tile.id}
+                    tile={tile}
+                    onLaunch={() => launch(tile)}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setContextMenu({ x: e.clientX, y: e.clientY, tile })
+                    }}
+                  />
+                ))}
+                <AddTile onClick={() => setShowAdd(true)} />
+              </div>
+            </div>
+          </div>
+        )}
 
         {dragOver && (
-          <div className="fixed inset-6 border-2 border-dashed border-stone-900 bg-stone-100/80 backdrop-blur-sm pointer-events-none flex items-center justify-center">
+          <div className="fixed inset-6 border-2 border-dashed border-stone-900 bg-stone-100/80 backdrop-blur-sm pointer-events-none flex items-center justify-center z-10">
             <div className="text-center">
               <p className="text-xl font-semibold">여기에 놓으면 자동 추가</p>
               <p className="text-sm text-stone-500 mt-1.5">아이콘이 자동으로 추출됩니다</p>
