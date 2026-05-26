@@ -54,12 +54,22 @@ function MonitorCard({ tile, index, total, ringRotRef, dragRef, onLaunch, onCont
 
   function handleClick(e) {
     e.stopPropagation()
-    if (dragRef.current?.didMove) return
+    // 드래그였으면 실행 안 하고 다음 클릭 위해 플래그 리셋
+    if (dragRef.current?.didMove) {
+      dragRef.current.didMove = false
+      return
+    }
     onLaunch(tile)
   }
 
   return (
-    <group ref={meshRef}>
+    <group
+      ref={meshRef}
+      onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer' }}
+      onPointerOut={() => { setHovered(false); document.body.style.cursor = 'auto' }}
+      onClick={handleClick}
+      onContextMenu={(e) => { e.stopPropagation(); onContextMenu?.(tile, e.nativeEvent || e) }}
+    >
       {/* 모니터 베젤 (어두운 프레임) */}
       <RoundedBox
         args={[1.6, 1.0, 0.08]}
@@ -67,15 +77,11 @@ function MonitorCard({ tile, index, total, ringRotRef, dragRef, onLaunch, onCont
         smoothness={4}
         castShadow
         receiveShadow
-        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer' }}
-        onPointerOut={() => { setHovered(false); document.body.style.cursor = 'auto' }}
-        onClick={handleClick}
-        onContextMenu={(e) => { e.stopPropagation(); onContextMenu?.(tile, e.nativeEvent || e) }}
       >
         <meshStandardMaterial color="#1a1a1a" roughness={0.55} metalness={0.35} />
       </RoundedBox>
 
-      {/* 화면 (인셋) */}
+      {/* 화면 (인셋) — 여기를 클릭해도 group 이벤트가 받음 */}
       <mesh position={[0, 0, 0.045]}>
         <planeGeometry args={[1.48, 0.88]} />
         <meshStandardMaterial color={catColor} roughness={0.4} metalness={0.05} emissive={catColor} emissiveIntensity={0.15} />

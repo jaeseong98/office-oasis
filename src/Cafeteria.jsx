@@ -113,11 +113,18 @@ export default function CafeteriaApp() {
             <p className="text-sm text-stone-500 mt-1.5">{formatPubDate(latest.pubDate)}</p>
 
             {latest.imageDataURL ? (
-              <img
-                src={latest.imageDataURL}
-                alt={latest.title}
-                className="mt-7 w-full border border-stone-200"
-              />
+              <div className="mt-7">
+                <img
+                  src={latest.imageDataURL}
+                  alt={latest.title}
+                  onClick={() => window.oasis?.openExternal(latest.link)}
+                  title="클릭하면 블로그에서 원본 크기로 열림"
+                  className="block mx-auto max-w-full max-h-[65vh] object-contain border border-stone-200 cursor-zoom-in shadow-sm"
+                />
+                <p className="text-[11px] text-stone-400 text-center mt-2">
+                  이미지 클릭 → 블로그에서 원본 크기
+                </p>
+              </div>
             ) : latest.imageUrl ? (
               <div className="mt-7 p-6 bg-stone-100 border border-stone-200 text-center text-sm text-stone-500">
                 이미지를 미리 가져오지 못했습니다.
