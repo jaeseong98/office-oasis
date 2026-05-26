@@ -577,6 +577,28 @@ function parseRssItem(body) {
   return { title, link, pubDate, imageUrl, text }
 }
 
+// RSS 썸네일(blogthumb)은 잘린 미리보기라, 실제 게시물 페이지에서 원본 이미지(postfiles)를 가져온다.
+async function fetchOriginalImageFromPost(postUrl) {
+  if (!postUrl) return null
+  try {
+    const match = postUrl.match(/momsfood_\/(\d+)/) || postUrl.match(/logNo=(\d+)/)
+    if (!match) return null
+    const logNo = match[1]
+    const viewUrl = `https://blog.naver.com/PostView.naver?blogId=momsfood_&logNo=${logNo}`
+    const r = await fetch(viewUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    })
+    if (!r.ok) return null
+    const html = await r.text()
+    // 원본 이미지 호스트: postfiles.pstatic 또는 blogfiles.pstatic
+    const m = html.match(/<img[^>]+src=["'](https?:\/\/(?:postfiles|blogfiles)\.pstatic\.net\/[^"']+)["']/i)
+    return m?.[1] || null
+  } catch (err) {
+    console.warn('[oasis] post page fetch failed:', err.message)
+    return null
+  }
+}
+
 async function fetchCafeteria(forceRefresh = false) {
   if (!forceRefresh && cafeteriaCache && Date.now() - cafeteriaCache.fetchedAt < CAFETERIA_TTL_MS) {
     return cafeteriaCache
@@ -600,14 +622,20 @@ async function fetchCafeteria(forceRefresh = false) {
     const menuItems = items.filter(i => /식단|메뉴/.test(i.title))
     const latest = menuItems[0] || items[0] || null
 
-    // 최신 한 개만 이미지 fetch
+    // 게시물 페이지에서 원본 이미지 가져오기 (RSS 썸네일은 잘려 있음)
     let imageDataURL = null
-    if (latest?.imageUrl) {
-      imageDataURL = await fetchImageAsDataURL(latest.imageUrl)
+    let originalImageUrl = null
+    if (latest?.link) {
+      originalImageUrl = await fetchOriginalImageFromPost(latest.link)
+    }
+    // 원본 못 찾으면 RSS 썸네일이라도 시도
+    const imageToFetch = originalImageUrl || latest?.imageUrl
+    if (imageToFetch) {
+      imageDataURL = await fetchImageAsDataURL(imageToFetch)
     }
 
     cafeteriaCache = {
-      latest: latest ? { ...latest, imageDataURL } : null,
+      latest: latest ? { ...latest, imageDataURL, originalImageUrl } : null,
       recent: menuItems.slice(0, 6).map(i => ({ title: i.title, link: i.link, pubDate: i.pubDate })),
       blogUrl: CAFETERIA_BLOG,
       fetchedAt: Date.now(),
