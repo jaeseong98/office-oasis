@@ -524,6 +524,102 @@ ipcMain.handle('settings:set-auto-launch', (_e, payload) => {
 
 ipcMain.handle('app:get-version', () => app.getVersion())
 
+ipcMain.handle('shell:open-external', (_e, url) => {
+  if (typeof url === 'string' && /^https?:\/\//.test(url)) {
+    shell.openExternal(url)
+  }
+  return { ok: true }
+})
+
+/* ───────── 구내식당 (맘스푸드 블로그 크롤링) ───────── */
+
+const CAFETERIA_RSS = 'https://rss.blog.naver.com/momsfood_.xml'
+const CAFETERIA_BLOG = 'https://blog.naver.com/momsfood_'
+const CAFETERIA_TTL_MS = 60 * 60 * 1000  // 1시간
+
+let cafeteriaCache = null
+
+async function fetchImageAsDataURL(url) {
+  if (!url) return null
+  try {
+    const r = await fetch(url, {
+      headers: {
+        'Referer': 'https://blog.naver.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+    })
+    if (!r.ok) return null
+    const buf = Buffer.from(await r.arrayBuffer())
+    // 너무 큰 이미지는 거부 (5MB)
+    if (buf.length > 5 * 1024 * 1024) return null
+    const contentType = (r.headers.get('content-type') || 'image/jpeg').split(';')[0].trim()
+    return `data:${contentType};base64,${buf.toString('base64')}`
+  } catch (err) {
+    console.warn('[oasis] image fetch failed:', err.message)
+    return null
+  }
+}
+
+function parseRssItem(body) {
+  const get = (re) => body.match(re)?.[1]?.replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '').trim()
+  const title = get(/<title>([\s\S]*?)<\/title>/)
+  const link = get(/<link>([\s\S]*?)<\/link>/)
+  const pubDate = get(/<pubDate>([\s\S]*?)<\/pubDate>/)
+  const description = body.match(/<description>([\s\S]*?)<\/description>/)?.[1] || ''
+  const cleanDesc = description.replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '')
+  const imageUrl = cleanDesc.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1]
+  const text = cleanDesc
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return { title, link, pubDate, imageUrl, text }
+}
+
+async function fetchCafeteria(forceRefresh = false) {
+  if (!forceRefresh && cafeteriaCache && Date.now() - cafeteriaCache.fetchedAt < CAFETERIA_TTL_MS) {
+    return cafeteriaCache
+  }
+  try {
+    const r = await fetch(CAFETERIA_RSS, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    const xml = await r.text()
+
+    const items = []
+    const itemRe = /<item>([\s\S]*?)<\/item>/g
+    let m
+    while ((m = itemRe.exec(xml)) !== null) {
+      const parsed = parseRssItem(m[1])
+      if (parsed.title) items.push(parsed)
+    }
+
+    // 주간식단표 관련 게시물 우선
+    const menuItems = items.filter(i => /식단|메뉴/.test(i.title))
+    const latest = menuItems[0] || items[0] || null
+
+    // 최신 한 개만 이미지 fetch
+    let imageDataURL = null
+    if (latest?.imageUrl) {
+      imageDataURL = await fetchImageAsDataURL(latest.imageUrl)
+    }
+
+    cafeteriaCache = {
+      latest: latest ? { ...latest, imageDataURL } : null,
+      recent: menuItems.slice(0, 6).map(i => ({ title: i.title, link: i.link, pubDate: i.pubDate })),
+      blogUrl: CAFETERIA_BLOG,
+      fetchedAt: Date.now(),
+    }
+    return cafeteriaCache
+  } catch (err) {
+    return { error: err.message || String(err), fetchedAt: Date.now() }
+  }
+}
+
+ipcMain.handle('cafeteria:fetch', async (_e, force) => fetchCafeteria(!!force))
+
 /* ───────── 윈도우 컨트롤 (custom titlebar용) ───────── */
 
 function ownerWindow(event) {

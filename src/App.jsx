@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, FolderOpen, ExternalLink, X, Plus, Sparkles, Layers, FileText, ClipboardCopy, Settings } from 'lucide-react'
+import { ChevronRight, FolderOpen, ExternalLink, X, Plus, Sparkles, Layers, FileText, ClipboardCopy, Settings, UtensilsCrossed } from 'lucide-react'
 import LauncherApp from './Launcher.jsx'
 import NotesApp from './Notes.jsx'
 import ClipboardApp from './Clipboard.jsx'
+import CafeteriaApp from './Cafeteria.jsx'
 
 const TABS = [
+  { id: 'cafeteria', label: '식단',     Icon: UtensilsCrossed },
   { id: 'cleanup',   label: '청소',     Icon: Sparkles },
   { id: 'launcher',  label: '런처',     Icon: Layers },
   { id: 'notes',     label: '노트',     Icon: FileText },
@@ -387,6 +389,7 @@ export default function App() {
         {activeTab === 'launcher' && <LauncherApp />}
         {activeTab === 'notes' && <NotesApp />}
         {activeTab === 'clipboard' && <ClipboardApp />}
+        {activeTab === 'cafeteria' && <CafeteriaApp />}
       </div>
 
       {toast && (

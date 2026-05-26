@@ -90,7 +90,12 @@ contextBridge.exposeInMainWorld('oasis', {
   // ─── 설정 ───
   getAutoLaunch: () => ipcRenderer.invoke('settings:get-auto-launch'),
   setAutoLaunch: (payload) => ipcRenderer.invoke('settings:set-auto-launch', payload),
-  appVersion: undefined, // 동기 접근용 — preload에선 IPC가 비동기이므로 별도 처리
+
+  // ─── 구내식당 ───
+  cafeteriaFetch: (force) => ipcRenderer.invoke('cafeteria:fetch', force),
+  openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
+
+  appVersion: undefined,
 })
 
 // 버전을 동기로 노출하기 위해 별도 호출
