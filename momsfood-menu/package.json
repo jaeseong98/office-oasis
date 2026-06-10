@@ -1,0 +1,10 @@
+{
+  "name": "momsfood-menu",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "맘스푸드 구내식당 식단표 미러 — Vercel + Supabase",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.106.1"
+  }
+}

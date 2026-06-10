@@ -1,0 +1,150 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+               "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+  background: #fafaf9;
+  color: #1c1917;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #78716c;
+  font-weight: 500;
+  margin: 0 0 12px;
+}
+
+.muted { color: #a8a29e; }
+.small { font-size: 12px; }
+.hidden { display: none !important; }
+a { color: inherit; }
+
+.topbar {
+  border-bottom: 1px solid #e7e5e4;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 24px 0;
+}
+.brand {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+main { padding: 40px 0 80px; }
+
+.state {
+  text-align: center;
+  padding: 80px 24px;
+  color: #78716c;
+  font-size: 14px;
+}
+.error-title { color: #1c1917; font-weight: 600; font-size: 16px; margin: 0 0 8px; }
+.error-detail { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #78716c; margin: 0 0 16px; }
+#retry-btn {
+  background: #1c1917; color: white; border: 0; padding: 10px 20px;
+  font-size: 14px; cursor: pointer; font-family: inherit;
+}
+#retry-btn:hover { background: #0a0a0a; }
+
+/* ─── 이번 주 식단 ─── */
+.latest { padding: 0 24px; }
+.latest-title {
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0 0 6px;
+}
+.latest-date { color: #78716c; font-size: 14px; margin: 0 0 24px; }
+
+.latest-image-link {
+  display: block;
+  margin: 0 0 28px;
+}
+.latest-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #e7e5e4;
+  background: white;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+}
+.latest-image-link:hover .latest-image {
+  border-color: #1c1917;
+}
+
+.latest-text {
+  font-size: 15px;
+  color: #44403c;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  margin: 0 0 24px;
+  padding: 20px 24px;
+  background: #f5f5f4;
+  border-left: 2px solid #1c1917;
+}
+
+.latest-source a {
+  font-size: 13px;
+  color: #57534e;
+  text-decoration: none;
+  border-bottom: 1px solid #d6d3d1;
+}
+.latest-source a:hover { color: #1c1917; border-bottom-color: #1c1917; }
+
+/* ─── 지난 주 ─── */
+.history {
+  margin-top: 64px;
+  padding-top: 32px;
+  border-top: 1px solid #e7e5e4;
+}
+.history ul { list-style: none; padding: 0; margin: 0; }
+.history li { border-bottom: 1px solid #e7e5e4; }
+.history li a {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 14px 0;
+  text-decoration: none;
+  color: inherit;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.history li a:hover { color: #1c1917; }
+.history li a:hover .hist-title { text-decoration: underline; text-underline-offset: 4px; }
+.hist-title { font-size: 15px; font-weight: 500; }
+.hist-date { color: #a8a29e; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+/* ─── 푸터 ─── */
+.footer {
+  border-top: 1px solid #e7e5e4;
+  background: white;
+  padding: 28px 0;
+  text-align: center;
+}
+.footer p { margin: 4px 0; font-size: 13px; color: #57534e; }
+.footer a { color: #1c1917; text-decoration: underline; text-decoration-color: #d6d3d1; text-underline-offset: 3px; }
+.footer a:hover { text-decoration-color: #1c1917; }
+
+@media (max-width: 600px) {
+  .latest-title { font-size: 24px; }
+  .topbar { padding: 16px 0; }
+  .brand { font-size: 18px; }
+  main { padding: 24px 0 60px; }
+}

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="맘스푸드 구내식당 주간 식단표 미러" />
+  <meta name="theme-color" content="#fafaf9" />
+  <title>맘스푸드 식단</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231c1917'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='%23fafaf9'%3E🍱%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container">
+      <p class="eyebrow">구내식당 미러</p>
+      <h1 class="brand">맘스푸드 식단표</h1>
+    </div>
+  </header>
+
+  <main id="main">
+    <div id="loading" class="state">
+      <p>식단 가져오는 중…</p>
+    </div>
+    <div id="error" class="state hidden">
+      <p class="error-title">식단을 가져오지 못했습니다</p>
+      <p class="error-detail" id="error-detail"></p>
+      <button id="retry-btn">다시 시도</button>
+    </div>
+
+    <div id="content" class="hidden">
+      <section class="latest container" id="latest"></section>
+
+      <section class="history container" id="history">
+        <p class="eyebrow">지난 주 식단</p>
+        <ul id="history-list"></ul>
+      </section>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>원본 출처:
+        <a id="blog-link" href="https://blog.naver.com/momsfood_" target="_blank" rel="noopener">blog.naver.com/momsfood_</a>
+      </p>
+      <p class="muted small" id="generated-at"></p>
+    </div>
+  </footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id)
+
+    function fmtDate(s) {
+      if (!s) return ''
+      try {
+        return new Date(s).toLocaleDateString('ko-KR', {
+          year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
+        })
+      } catch { return s }
+    }
+    function relTime(s) {
+      if (!s) return ''
+      const d = Date.now() - new Date(s).getTime()
+      const min = Math.floor(d / 60000)
+      if (min < 1) return '방금'
+      if (min < 60) return min + '분 전'
+      const hr = Math.floor(min / 60)
+      if (hr < 24) return hr + '시간 전'
+      return Math.floor(hr / 24) + '일 전'
+    }
+    function escape(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]))
+    }
+
+    async function load() {
+      $('loading').classList.remove('hidden')
+      $('error').classList.add('hidden')
+      $('content').classList.add('hidden')
+
+      try {
+        const r = await fetch('/api/cafeteria', { cache: 'no-store' })
+        if (!r.ok) throw new Error('HTTP ' + r.status)
+        const data = await r.json()
+        if (data.error) throw new Error(data.error)
+        render(data)
+      } catch (err) {
+        $('error-detail').textContent = err.message || String(err)
+        $('loading').classList.add('hidden')
+        $('error').classList.remove('hidden')
+      }
+    }
+
+    function render(data) {
+      const { latest, history, blogUrl, generatedAt } = data
+      $('loading').classList.add('hidden')
+
+      if (!latest) {
+        $('latest').innerHTML = '<p class="muted">아직 등록된 식단이 없습니다.</p>'
+      } else {
+        const imgHtml = latest.image_url
+          ? `<a class="latest-image-link" href="${escape(latest.image_url)}" target="_blank" rel="noopener">
+               <img class="latest-image" src="${escape(latest.image_url)}" alt="${escape(latest.title)}" />
+             </a>`
+          : ''
+        const textHtml = latest.text_content
+          ? `<div class="latest-text">${escape(latest.text_content)}</div>`
+          : ''
+        $('latest').innerHTML = `
+          <p class="eyebrow">이번 주 식단</p>
+          <h2 class="latest-title">${escape(latest.title)}</h2>
+          <p class="latest-date">${escape(fmtDate(latest.pub_date))}</p>
+          ${imgHtml}
+          ${textHtml}
+          <p class="latest-source">
+            <a href="${escape(latest.link)}" target="_blank" rel="noopener">원본 블로그 게시물 →</a>
+          </p>
+        `
+      }
+
+      if (history && history.length > 0) {
+        const items = history.slice(0, 10).map((p) => `
+          <li>
+            <a href="${escape(p.link)}" target="_blank" rel="noopener">
+              <span class="hist-title">${escape(p.title)}</span>
+              <span class="hist-date">${escape(fmtDate(p.pub_date))}</span>
+            </a>
+          </li>
+        `).join('')
+        $('history-list').innerHTML = items
+        $('history').classList.remove('hidden')
+      } else {
+        $('history').classList.add('hidden')
+      }
+
+      if (blogUrl) $('blog-link').href = blogUrl
+      $('generated-at').textContent = generatedAt ? `갱신: ${relTime(generatedAt)}` : ''
+      $('content').classList.remove('hidden')
+    }
+
+    $('retry-btn').addEventListener('click', load)
+    load()
+  </script>
+</body>
+</html>
