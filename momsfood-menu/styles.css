@@ -79,11 +79,9 @@ main { padding: 40px 0 80px; }
   text-align: center;
 }
 .latest-image {
-  display: block;
-  width: 100%;
+  display: inline-block;
   max-width: 100%;
   height: auto;
-  margin: 0 auto;
   border: 1px solid #e7e5e4;
   background: white;
   box-shadow: 0 4px 16px rgba(0,0,0,0.04);

@@ -42,6 +42,15 @@ export async function fetchRssItems() {
   return items
 }
 
+function upgradeNaverImageSize(url) {
+  if (!url) return url
+  // ?type=wNNN 또는 &type=wNNN 을 더 큰 사이즈로 교체. 없으면 추가.
+  if (/[?&]type=w\d+/.test(url)) {
+    return url.replace(/([?&])type=w\d+/, '$1type=w3840')
+  }
+  return url + (url.includes('?') ? '&' : '?') + 'type=w3840'
+}
+
 export async function fetchOriginalImageUrl(logNo) {
   if (!logNo) return null
   try {
@@ -50,7 +59,7 @@ export async function fetchOriginalImageUrl(logNo) {
     if (!r.ok) return null
     const html = await r.text()
     const m = html.match(/<img[^>]+src=["'](https?:\/\/(?:postfiles|blogfiles)\.pstatic\.net\/[^"']+)["']/i)
-    return m?.[1] || null
+    return upgradeNaverImageSize(m?.[1] || null)
   } catch {
     return null
   }
