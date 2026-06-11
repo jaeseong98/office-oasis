@@ -12,7 +12,6 @@
 <body>
   <header class="topbar">
     <div class="container">
-      <p class="eyebrow">구내식당 미러</p>
       <h1 class="brand">맘스푸드 식단표</h1>
     </div>
   </header>
@@ -109,7 +108,6 @@
         $('latest').innerHTML = `
           <p class="eyebrow">이번 주 식단</p>
           <h2 class="latest-title">${escape(latest.title)}</h2>
-          <p class="latest-date">${escape(fmtDate(latest.pub_date))}</p>
           ${imgHtml}
           ${textHtml}
           <p class="latest-source">
